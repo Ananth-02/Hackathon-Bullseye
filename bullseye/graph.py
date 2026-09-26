@@ -1,10 +1,14 @@
 """Step 2: turn raw facts into a dependency graph with per-function flags.
 
-Macros are expanded so that e.g. taskENTER_CRITICAL() becomes a real edge to
-vPortEnterCritical(), and a register write hidden inside portYIELD() is still
-seen as a hardware write by every function that uses portYIELD().
+Patterns now use {"id", "text"} dictionaries instead of plain strings. The
+old pattern list stored descriptions such as "memory / instruction barrier
+(dsb, isb, sync...)" directly as LLM citation targets. Reproducing those
+descriptions exactly is fragile: a near-match could fail validation and
+silently discard a correct citation. Each detected pattern
+(barrier_asm, dup_reg_write, dummy_read, and nop_padding) now carries a short,
+stable ID for citation alongside its human-readable text for display. Grounding
+checks therefore use identifiers that an LLM can reliably reproduce.
 """
-import fnmatch
 import re
 from collections import defaultdict, deque
 
@@ -21,7 +25,6 @@ class MacroTable:
         return name in self.by_name
 
     def expand(self, names, depth=6):
-        """Return {identifier: macro chain that led to it} for everything reachable through macros."""
         reached = {}
         queue = deque((n, ()) for n in names if n in self.by_name)
         while queue:
@@ -70,7 +73,6 @@ def build(functions, macros, public_decls, header_docs, cfg):
             return True
         return bool((reg_field and reg_field.search(text)) or (mmio and mmio.search(text)))
 
-    # ---- node ids: plain name when unique, file::name when a static name repeats
     by_name = defaultdict(list)
     for f in functions:
         by_name[f.name].append(f)
@@ -88,10 +90,10 @@ def build(functions, macros, public_decls, header_docs, cfg):
         return public[:1] if len(public) == 1 else cands
 
     nodes = {}
-    edges = []               # (caller_id, callee_id, kind, via_macro)
-    edge_lines = defaultdict(set)   # (caller_id, callee_id) -> call-site lines
-    regions = {}             # caller_id -> list of (start_line, end_line) inside a lock
-    isr_roots = {}           # id -> reason
+    edges = []
+    edge_lines = defaultdict(set)
+    regions = {}
+    isr_roots = {}
     public = set(public_decls)
 
     for f in functions:
@@ -99,7 +101,6 @@ def build(functions, macros, public_decls, header_docs, cfg):
         expanded = mt.expand(f.idents | called_direct)
         flags, notes, hw_lines = {}, defaultdict(list), set()
 
-        # calls: direct, and calls hidden inside macros
         seen = set()
         call_lines = defaultdict(list)
         for c, line in f.calls:
@@ -119,7 +120,6 @@ def build(functions, macros, public_decls, header_docs, cfg):
                     if tgt is not f and tgt.id not in seen:
                         seen.add(tgt.id)
                         edges.append((f.id, tgt.id, "call", chain[0]))
-        # lock regions: lines between an enter marker and its matching exit marker
         events = sorted([(l, 1, c) for c, l in f.calls if c in lock_enter] + [(l, -1, c) for c, l in f.calls if c in lock_exit])
         depth, start, reg = 0, None, []
         for l, d, c in events:
@@ -130,13 +130,11 @@ def build(functions, macros, public_decls, header_docs, cfg):
                 reg.append((start[0], l, start[1]))
                 start = None
         regions[f.id] = reg
-        # function names used as values (callbacks, task entry points, ISR registration)
         for idn in f.idents - called_direct:
             if idn in by_name and idn != f.name:
                 for tgt in resolve(idn, f.file):
                     edges.append((f.id, tgt.id, "ref", None))
 
-        # hardware register writes (direct, or inside a macro the function uses)
         for line, lhs in f.assign_lhs:
             if is_hw_target(lhs) or any(mt.any(i, "hw_register") for i in re.findall(r"[A-Za-z_]\w*", lhs)):
                 hw_lines.add(line)
@@ -148,7 +146,6 @@ def build(functions, macros, public_decls, header_docs, cfg):
                     break
         flags["writes_hw_register"] = bool(notes["writes_hw_register"])
 
-        # inline assembly: interrupt masking and memory barriers
         own_asm = [(l, a) for l, a in f.asm]
         asm_texts = list(own_asm)
         for idn in f.idents | called_direct | set(expanded):
@@ -160,7 +157,6 @@ def build(functions, macros, public_decls, header_docs, cfg):
             if l:
                 hw_lines.add(l)
 
-        # critical sections
         crit = sorted((called_direct | f.idents | set(expanded)) & critical)
         if crit:
             notes["critical_section"].append("uses " + ", ".join(crit[:3]))
@@ -168,7 +164,6 @@ def build(functions, macros, public_decls, header_docs, cfg):
             notes["critical_section"].append("masks interrupts in inline assembly")
         flags["critical_section"] = bool(crit or masking)
 
-        # busy-wait loops and timing delays
         for line, empty, cond, body, kind, has_update in f.loops:
             polls_hw = is_hw_target(cond) or "volatile" in cond or any(h in cond for h in hw_macros)
             nop_only = "nop" in body and body.count(";") <= 3
@@ -196,21 +191,25 @@ def build(functions, macros, public_decls, header_docs, cfg):
             for tgt in by_name.get(idn, []):
                 isr_roots[tgt.id] = f"registered as an interrupt / exception handler via {reg}() in {f.name}"
 
+        # Patterns get a stable short id alongside the human-readable text.
+        # An LLM cites the id ("pattern:barrier_asm"), never the text -- the
+        # text contains punctuation and an ellipsis that isn't a reliable
+        # thing for a model to reproduce exactly, and a citation match that
+        # fails on formatting is indistinguishable from an ungrounded claim.
         patterns = []
         if any(barrier.search(a) for _, a in own_asm):
-            patterns.append("memory / instruction barrier (dsb, isb, sync…)")
+            patterns.append({"id": "barrier_asm", "text": "memory / instruction barrier (dsb, isb, sync…)"})
         lhs_seq = [l for _, l in f.assign_lhs]
         if any(a == b and is_hw_target(a) for a, b in zip(lhs_seq, lhs_seq[1:])):
-            patterns.append("same register written twice in a row")
+            patterns.append({"id": "dup_reg_write", "text": "same register written twice in a row"})
         if any(h in hw_macros or is_hw_target(h) for h in re.findall(r"\(\s*void\s*\)\s*([A-Za-z_]\w*)\s*;", f.code)):
-            patterns.append("dummy read of a register")
+            patterns.append({"id": "dummy_read", "text": "dummy read of a register"})
         if any(re.search(r"\bnop\b", a, re.I) for _, a in own_asm):
-            patterns.append("nop timing padding")
+            patterns.append({"id": "nop_padding", "text": "nop timing padding"})
 
         nodes[f.id] = dict(fn=f, flags=flags, notes=dict(notes), hw_lines=sorted(hw_lines),
                            patterns=patterns, macro_hits=sorted(set(c[0] for c in expanded.values()))[:12])
 
-    # ---- adjacency
     callers, callees, refs_in = defaultdict(set), defaultdict(set), defaultdict(set)
     via = {}
     for a, b, kind, v in edges:
@@ -222,7 +221,6 @@ def build(functions, macros, public_decls, header_docs, cfg):
         else:
             refs_in[b].add(a)
 
-    # ---- interrupt context: roots plus everything they (transitively) call
     isr_ctx = dict(isr_roots)
     queue = deque(isr_roots)
     while queue:
@@ -236,7 +234,6 @@ def build(functions, macros, public_decls, header_docs, cfg):
         if nid in isr_ctx:
             n["notes"]["isr_context"] = [isr_ctx[nid]]
 
-    # ---- locked context (fixed point)
     def in_region(caller, lines):
         return bool(lines) and all(any(a < l < b for a, b, _ in regions.get(caller, [])) for l in lines)
 
@@ -266,7 +263,6 @@ def build(functions, macros, public_decls, header_docs, cfg):
         if nid in locked:
             n["notes"]["locked_context"] = ["every caller holds a lock: " + "; ".join(locked[nid][:3])]
 
-    # ---- blast radius: every function that can reach this one
     def ancestors(nid):
         seen, q = set(), deque([nid])
         while q:

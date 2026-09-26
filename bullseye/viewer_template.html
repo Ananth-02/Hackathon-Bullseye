@@ -108,6 +108,8 @@ main > * { min-width: 0; }
 .tbox.on.high rect { fill: var(--high-soft); stroke: var(--high); }
 .tbox.on.medium rect { fill: var(--med-soft); stroke: var(--med); }
 .tbox.on.low rect { fill: var(--low-soft); stroke: var(--low); }
+.tbox.info rect { fill: none; stroke: var(--rule); stroke-dasharray: 3 3; }
+.tbox.info text { fill: var(--muted); font-style: italic; }
 .thead { font-size: 11.5px; font-weight: 600; fill: var(--ink); font-family: var(--sans); }
 .tskip { font-size: 10.5px; fill: var(--muted); font-style: italic; font-family: var(--sans); }
 .tpath { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; opacity: 0.85; }
@@ -355,29 +357,37 @@ function renderGraph() {
 function renderTrack() {
   const f = byId[S.sel], th = ds().meta.thresholds || { high: 15, medium: 5 };
   const inv = { high: "low", medium: "medium", low: "high" };
+  const pTag = (f.score_path.find(s => s.startsWith("p=")) || "").slice(2);
   const stages = [
     { t: "Hard trigger?", o: [["trigger:yes", "Yes: risk HIGH", "high"], ["trigger:no", "None"]] },
-    { t: "Direct callers", o: [["fanin:high", `${th.high}+: HIGH`, "high"], ["fanin:medium", `${th.medium}–${th.high - 1}: MEDIUM`, "medium"], ["fanin:low", `Under ${th.medium}: LOW`, "low"]] },
-    { t: "Public API?", o: [["api:yes", "Yes: min. MEDIUM", "medium"], ["api:no", "No"]] },
-    { t: "LLM: deliberate?", o: [["llm:yes", "Yes: raise risk"], ["llm:no", "No"], ["llm:offline", "Not run (offline)"]] },
+    { t: "Direct callers", o: [["struct:high", `${th.high}+: HIGH`, "high"], ["struct:medium", `${th.medium}–${th.high - 1}: MED`, "medium"], ["struct:low", `Under ${th.medium}: LOW`, "low"]] },
+    { t: "Public API?", o: [["floor:yes", "Yes: floor MED", "medium"], ["floor:no", "No"]] },
+    { t: "LLM: deliberate?", o: [["llm:grounded", "Grounded: counts"], ["llm:ungrounded", "Uncited: dropped"], ["llm:offline", "Not run (offline)"]] },
     { t: "Evidence (conf.)", o: [["evidence:comment", "Comment: HIGH", "low"], ["evidence:commit", "Commit: HIGH", "low"], ["evidence:pattern", "Pattern: MEDIUM", "medium"], ["evidence:none", "None: LOW", "high"]] },
+    { t: "Signals agree?", o: [["disagree:no", "Agree"], ["disagree:yes", "Conflict", "high"]] },
     { t: "Blind spots?", o: [["downgrade:yes", "Yes: lower conf."], ["downgrade:no", "No"]] },
-    { t: "Result", o: [["result", `${f.risk.toUpperCase()} risk`, f.risk], ["result2", `${f.confidence} confidence`, inv[f.confidence]]] },
+    { t: "Result", o: [["result", `${f.risk.toUpperCase()} risk`, f.risk], ["result2", `${f.confidence} confidence`, inv[f.confidence]], ["result3", pTag === "gated" ? "gated (no eqn)" : `p = ${pTag}`]] },
   ];
   const W = 900, cw = W / stages.length, bw = cw - 14, bh = 30, top = 32;
   const on = new Set(f.score_path.concat(["result"]));
+  // On a hard-trigger (gated) function the risk is decided before the equation
+  // runs. struct/floor are still recorded as facts, so show them greyed rather
+  // than as part of the blue route.
+  const gated = pTag === "gated";
+  const informational = id => gated && (id.startsWith("struct:") || id.startsWith("floor:"));
   let svg = "", pts = [];
   stages.forEach((s, i) => {
     const cx = i * cw + cw / 2;
     svg += `<text class="thead" x="${cx}" y="16" text-anchor="middle">${esc(s.t)}</text>`;
     let hit = null;
     s.o.forEach(([id, label, tone], j) => {
-      const y = top + j * (bh + 8), lit = on.has(id) || (id === "result2");
-      if (on.has(id) && hit === null) hit = y + bh / 2;
-      svg += `<g class="tbox ${lit ? "on " + (tone || "") : ""}"><rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${bh}" rx="5"/>
+      const y = top + j * (bh + 8), lit = on.has(id) || (id === "result2") || (id === "result3");
+      const info = informational(id) && on.has(id);
+      if (on.has(id) && hit === null && !info) hit = y + bh / 2;
+      svg += `<g class="tbox ${info ? "info" : lit ? "on " + (tone || "") : ""}"><rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${bh}" rx="5"/>
         <text x="${cx}" y="${y + 19}" text-anchor="middle">${esc(label)}</text></g>`;
     });
-    if (hit === null) { hit = top - 6; svg += `<text class="tskip" x="${cx}" y="${top + s.o.length * (bh + 8) + 8}" text-anchor="middle">skipped</text>`; }
+    if (hit === null) { hit = top - 6; svg += `<text class="tskip" x="${cx}" y="${top + s.o.length * (bh + 8) + 8}" text-anchor="middle">${gated ? "not needed" : "skipped"}</text>`; }
     pts.push([i * cw + (cw - bw) / 2, hit], [i * cw + (cw + bw) / 2, hit]);
   });
   let d = `M${pts[0][0] - 6},${pts[0][1]}`;
@@ -424,7 +434,7 @@ function renderDetail() {
     <section><h3>Why it is written this way</h3>
       ${f.why ? `<p>${esc(f.why)} <span class="muted">(LLM explanation, check against the evidence below)</span></p>` : ""}
       ${evidence}
-      ${f.patterns.length ? `<p>Known defensive pattern in the code: ${esc(f.patterns.join("; "))}.</p>` : ""}
+      ${f.patterns.length ? `<p>Known defensive pattern in the code: ${esc(f.patterns.map(p => typeof p === "string" ? p : p.text).join("; "))}.</p>` : ""}
       ${!evidence && !f.patterns.length && !f.why ? '<p class="muted">No comment, commit or known pattern explains this code.</p>' : ""}</section>
     <section><h3>Why this risk level</h3><ul>${f.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}
       ${notes.map(([k, v]) => `<li><span class="muted">${esc(TRIG[k] || k)}:</span> ${esc(v.slice(0, 3).join("; "))}</li>`).join("")}</ul>
