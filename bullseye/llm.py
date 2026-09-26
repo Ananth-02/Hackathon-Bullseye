@@ -19,7 +19,9 @@ import concurrent.futures
 import hashlib
 import json
 import os
-import re
+import random
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -78,17 +80,77 @@ def configured():
     return [c for c in (_cfg("BULLSEYE_LLM"), _cfg("BULLSEYE_LLM2")) if c]
 
 
-def _call(cfg, prompt, timeout=120):
+def _extract_json(txt):
+    """First balanced {...} object in txt, or None.
+
+    Counts braces instead of matching a greedy regex: models often wrap the JSON
+    in commentary that contains braces of its own, and `{.*}` then runs to the
+    last one and fails to parse. Braces inside strings do not count.
+    """
+    start = txt.find("{")
+    while start != -1:
+        depth, in_str, esc = 0, False, False
+        for i in range(start, len(txt)):
+            c = txt[i]
+            if in_str:
+                esc = (c == "\\") and not esc
+                if c == '"' and not esc:
+                    in_str = False
+                continue
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(txt[start:i + 1])
+                    except ValueError:
+                        break            # malformed: fall through to the next '{'
+        start = txt.find("{", start + 1)
+    return None
+
+
+# statuses worth another try: rate limiting and transient gateway/server faults.
+# The gonka network answers 429 "out of capacity" routinely, so without this a
+# whole run degrades to errors even though the key and model are fine.
+RETRY_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+def _retry_after(err, cap=60):
+    """Seconds the server asked us to wait, if it said so and it is sane."""
+    try:
+        return min(float(err.headers.get("Retry-After", "")), cap)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _call(cfg, prompt, timeout=120, attempts=5):
     url, key, model, extra = cfg
     body = json.dumps({"model": model, "temperature": 0, "max_tokens": 900,
                        "messages": [{"role": "user", "content": prompt}], **extra}).encode()
-    req = urllib.request.Request(url, body, {"Content-Type": "application/json",
-                                             **({"Authorization": f"Bearer {key}"} if key else {})})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        msg = json.load(r)["choices"][0]["message"]
-    txt = msg.get("content") or msg.get("reasoning_content") or ""
-    m = re.search(r"\{.*\}", txt, re.S)
-    return json.loads(m.group(0)) if m else None
+    headers = {"Content-Type": "application/json",
+               **({"Authorization": f"Bearer {key}"} if key else {})}
+    delay = 4.0
+    for attempt in range(1, attempts + 1):
+        try:
+            req = urllib.request.Request(url, body, headers)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                msg = json.load(r)["choices"][0]["message"]
+            txt = msg.get("content") or msg.get("reasoning_content") or ""
+            return _extract_json(txt)
+        except urllib.error.HTTPError as e:
+            if e.code not in RETRY_STATUS or attempt == attempts:
+                raise
+            wait = _retry_after(e) or delay
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            if attempt == attempts:
+                raise
+            wait = delay
+        # jitter, or every worker in the pool comes back at the same instant
+        time.sleep(wait + random.uniform(0, 1.0))
+        delay = min(delay * 2, 60)
 
 
 class LLM:
@@ -154,7 +216,7 @@ def check():
     code = 0
     for i, cfg in enumerate(models, 1):
         try:
-            r = _call(cfg, 'Reply with JSON only: {"ok": true}', timeout=60)
+            r = _call(cfg, 'Reply with JSON only: {"ok": true}', timeout=120)
             print(f"model {i} ({cfg[2]} at {cfg[0]}): OK, replied {r}")
         except Exception as e:
             code = 1
