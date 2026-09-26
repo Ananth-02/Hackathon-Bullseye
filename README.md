@@ -5,6 +5,17 @@ Find the code in legacy embedded C that must not be changed carelessly, and show
 Built for the Saab track at the Gothenburg Tech Week × Chalmers Hackathon 2026:
 *"How can AI help a new engineering team reconstruct the system's intent, dependencies and risks before making a change?"*
 
+## Team
+
+- **[@Ananth-02](https://github.com/Ananth-02)** — pipeline, call graph, viewer
+- **Eugene Dvoryankov** — scoring matrix, code refinement, debugging, idea formation
+- **Mary Wagura** — scoring matrix, code refinement, debugging, idea formation
+
+The scoring matrix Eugene and Mary built is on the
+[`feature/score_matrix`](../../tree/feature/score_matrix) and
+[`feature/behavior-assessments`](../../tree/feature/behavior-assessments)
+branches, and is what the log-odds scoring described below is built on.
+
 For every function Bullseye gives two separate scores:
 
 - **Risk**: how dangerous it is to change the function.
