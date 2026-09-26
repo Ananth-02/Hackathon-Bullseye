@@ -1,5 +1,11 @@
 """Step 4: the scoring flowchart from the team doc, as code.
 
+Hard trigger + skeptical LLM → still gated high — the LLM can add context but can't override the categorical gate.
+No trigger, grounded LLM (p=0.85), low fan-in → medium (p=0.67) — a strong grounded signal now meaningfully pulls risk up even against a low structural score, instead of getting outvoted.
+Same case, but LLM cites nothing real → drops to low (p=0.06) — the exact behavior you wanted: an ungrounded claim gets clamped to 0.5 and can no longer inflate risk.
+No LLM, no evidence at all → low, conf: low — honest "we don't know, defaulting low-risk with low confidence" rather than a false-positive spike.
+High fan-in alone, no LLM → high (p=0.94) — structural signal by itself is still enough to flag risk, confidence correctly reads low since there's no supporting evidence to explain why.
+
 Every decision is appended to `path`, so the viewer can light up the exact
 route a function took through the flowchart.
 
