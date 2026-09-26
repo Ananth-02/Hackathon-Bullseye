@@ -8,51 +8,6 @@ evidence pointer, combined into a log-odds score alongside the structural
 signal instead of jumping risk a whole tier on a bare yes/no. See
 `llm_term()` for the grounding rule that prevents an ungrounded claim from
 moving the score.
-
-Implementation notes for the revised scoring flow:
-
-1. Split the LLM's influence out of a binary jump into a calibrated,
-   evidence-gated equation (Option 1: log-odds combination). Originally, the
-   LLM answered a yes/no ("does this look deliberate?") that bumped risk a
-   full tier. That's guessable — an LLM can say "yes" with no basis and move
-   the result just as much as one with real evidence. Now the LLM outputs a
-   probability (`p_deliberate`) that only enters the score if it can cite
-   something real in evidence or patterns; if it can't, the probability is
-   clamped to 0.5 (no information) before it's combined with the structural
-   signal. This is the actual "prevent it from guessing" mechanism you asked
-   for.
-
-2. Split hard triggers back out as a categorical gate, separate from the
-   equation. First pass wrongly folded hard triggers (ISR context, register
-   writes, etc.) into the same continuous log-odds sum as fan-in — diluting a
-   qualitative "this is dangerous to guess about" fact into a quantity that
-   could get averaged down. Restored: `hard_triggers()` short-circuits
-   straight to `risk="high"` before the equation ever runs, matching the
-   original flowchart. The LLM can still add context/reasons on a gated
-   function, but can't lower its risk.
-
-3. Restored `floor_triggers` (dropped by mistake in the first rewrite).
-   `external_interface` was sitting in the default hard-trigger list, so every
-   public function gated straight to high regardless of anything else —
-   confirmed on real test data (`public_get_temperature` came out high/low-
-   confidence for no real reason). Fixed by giving `external_interface` its own
-   default list (`DEFAULT_FLOOR_TRIGGERS`) that raises a floor on `p`
-   (guarantees at least medium) instead of forcing a full gate.
-   `DEFAULT_HARD_TRIGGERS` now only contains the genuinely hardware/timing-
-   critical flags.
-
-4. Citation IDs switched from list-position to stable identifiers.
-   `llm_term()` used to validate a citation like `"comment:0"` against the
-   index in whatever list happened to be passed in. If evidence got re-sorted
-   or re-fetched between when the LLM saw it and when `score()` ran, a citation
-   could silently resolve to the wrong item — a false positive worse than an
-   honest "ungrounded" result. Now citations key on the comment's real source
-   line (`"comment:42"`), a commit's short SHA (`"commit:a1b2c3d4e5"`), and —
-   new — a pattern's stable short ID (`"pattern:barrier_asm"`) instead of its
-   full description string.
-
-5. Minor: `open_questions()` updated to read `node["patterns"][0]["text"]`
-   instead of a plain string, matching the new pattern shape from `graph.py`.
 """
 import math
 
@@ -186,13 +141,7 @@ def llm_term(llm, evidence, patterns):
     real_evidence_ids = {f"comment:{e['line']}" for e in evidence if e["type"] == "comment"}
     real_evidence_ids |= {f"commit:{e['commit']}" for e in evidence if e["type"] == "commit"}
     real_pattern_ids = {f"pattern:{p['id']}" for p in patterns}
-    # A function that nothing documents still has verifiable facts found in its
-    # own code. Without these, the LLM budget -- deliberately aimed at the
-    # least-understood functions -- could never cite anything, and every review
-    # of exactly the code this tool exists to explain would be discarded.
-    real_signal_ids = {f"signal:{s}" for s in llm.get("signals", [])}
-    valid = [c for c in llm.get("cites", [])
-             if c in real_evidence_ids or c in real_pattern_ids or c in real_signal_ids]
+    valid = [c for c in llm.get("cites", []) if c in real_evidence_ids or c in real_pattern_ids]
 
     p = llm.get("p_deliberate", 0.5)
     if not valid:
@@ -205,6 +154,22 @@ def llm_term(llm, evidence, patterns):
     contribution = math.log(p / (1 - p)) if 0 < p < 1 else (4.0 if p >= 1 else -4.0)
     contribution = max(-2.0, min(2.0, contribution))  # cap a single source's influence
     return contribution, status, valid
+
+
+def llm_path_token(l_status, l_logit):
+    """Map the internal grounding status to the viewer's fixed vocabulary.
+
+    The viewer's flowchart (viewer_template.html renderTrack()) hard-codes
+    ["llm:yes", "llm:no", "llm:offline"] for this column -- "yes" meaning
+    "the LLM's opinion raised risk", matching the old looks_deliberate=="yes"
+    contract. An ungrounded opinion is discarded (contributes nothing), so
+    it maps to "no" rather than a new value the viewer doesn't know about.
+    """
+    if l_status == "offline":
+        return "offline"
+    if l_status == "ungrounded":
+        return "no"
+    return "yes" if l_logit > 0 else "no"
 
 
 def disagreement_term(llm, struct_band, evidence_source):
@@ -234,28 +199,12 @@ def score(node, evidence, patterns, llm, cfg):
         reasons += [TRIGGER_TEXT[t] for t in triggers]
         risk = "high"
         p = None  # not a probabilistic call -- it's a categorical gate
-
-        # Fan-in and public-API status are facts about the function whether or
-        # not they decided the risk, so record them here too: a reader of the
-        # flowchart wants to see them. They are tagged informational (the path
-        # carries p=gated) so the viewer can show they did not drive the score.
-        _, struct_band = struct_term(node, cfg)
-        path.append(f"struct:{struct_band}")
-        reasons.append(f"{node['fan_in']} direct caller{'s' if node['fan_in'] != 1 else ''} "
-                        f"(blast radius {node['blast_radius']})")
-        gated_floors = [t for t in cfg.get("floor_triggers", DEFAULT_FLOOR_TRIGGERS)
-                        if node["flags"].get(t)]
-        path.append("floor:yes" if gated_floors else "floor:no")
-        if gated_floors:
-            reasons += [TRIGGER_TEXT[t] + ": floor at MEDIUM (already HIGH by trigger)"
-                        for t in gated_floors]
-
         path.append("evidence:" + ev_source)
 
         # the LLM can still speak here, but only to add context/reasons --
         # it cannot lower risk out of a hard-trigger function.
         l_logit, l_status, l_cites = llm_term(llm, evidence, patterns)
-        path.append(f"llm:{l_status}")
+        path.append(f"llm:{llm_path_token(l_status, l_logit)}")
         if l_status == "grounded":
             reasons.append(f"LLM assessed deliberate/defensive, grounded in {', '.join(l_cites)}")
         elif l_status == "ungrounded":
@@ -265,13 +214,13 @@ def score(node, evidence, patterns, llm, cfg):
         # --- Option 1: log-odds branch, only for the ambiguous case ---
         path.append("trigger:no")
         s_logit, struct_band = struct_term(node, cfg)
-        path.append(f"struct:{struct_band}")
+        path.append(f"fanin:{struct_band}")
         reasons.append(f"{node['fan_in']} direct caller{'s' if node['fan_in'] != 1 else ''} "
                         f"(blast radius {node['blast_radius']})")
         path.append("evidence:" + ev_source)
 
         l_logit, l_status, l_cites = llm_term(llm, evidence, patterns)
-        path.append(f"llm:{l_status}")
+        path.append(f"llm:{llm_path_token(l_status, l_logit)}")
         if l_status == "grounded":
             reasons.append(f"LLM assessed deliberate/defensive, grounded in {', '.join(l_cites)}")
         elif l_status == "ungrounded":
@@ -286,13 +235,13 @@ def score(node, evidence, patterns, llm, cfg):
         thresholds = cfg.get("risk_thresholds", {"high": 0.75, "medium": 0.4})
         floors = [t for t in cfg.get("floor_triggers", DEFAULT_FLOOR_TRIGGERS) if node["flags"].get(t)]
         if floors:
-            path.append("floor:yes")
+            path.append("api:yes")
             reasons += [TRIGGER_TEXT[t] + ": floor at MEDIUM" for t in floors]
             floor_p = thresholds.get("medium", 0.4) + 0.01
             if p < floor_p:
                 p = floor_p
         else:
-            path.append("floor:no")
+            path.append("api:no")
 
         risk = bucket(p, thresholds)
 
