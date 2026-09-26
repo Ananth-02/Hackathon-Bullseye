@@ -138,7 +138,10 @@ class LLM:
 
     def save(self):
         if self.models:
-            self.cache_path.write_text(json.dumps(self.cache))
+            # failures (quota, rate limit, network) are cached for this run only, so that
+            # fixing the cause and re-running retries them instead of reusing the error
+            keep = {k: v for k, v in self.cache.items() if not (v and "error" in v)}
+            self.cache_path.write_text(json.dumps(keep))
 
 
 def check():
