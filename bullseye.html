@@ -116,6 +116,8 @@ main > * { min-width: 0; }
 .bd td { padding: 1px 0; vertical-align: top; }
 .bd td.n { text-align: right; padding-right: 10px; white-space: nowrap; }
 .bd td.k { color: var(--muted); padding-right: 10px; white-space: nowrap; }
+.bd .bdsub { margin: 3px 0 9px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.bd .bdnote { margin: 9px 0 0; padding-top: 8px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); line-height: 1.5; }
 .bd tr.total td { border-top: 1px solid var(--rule); padding-top: 4px; font-weight: 600; }
 .bd .ungrounded { color: var(--high); }
 .tskip { font-size: 10.5px; fill: var(--muted); font-style: italic; font-family: var(--sans); }
@@ -437,10 +439,25 @@ function breakdown(f) {
   const cites = l.grounded
     ? `cited ${l.cites.map(esc).join(", ")}`
     : "no citation resolved, so the model could not move this score";
+  // The verdict above is this function's risk. THIS number is a second,
+  // continuous opinion on the opposite scale (100 = nothing here suggests
+  // caution), produced by a different method. Never print a second risk
+  // grade beside the first: two grades on inverted scales read as the tool
+  // contradicting itself rather than as two methods being compared.
+  const gated = f.score_path.indexOf("p=gated") !== -1;
+  const disagrees = (f.risk === "high" && l.change_confidence >= 70)
+                 || (f.risk === "low" && l.change_confidence <= 40);
+  const note = disagrees
+    ? `<p class="bdnote">This second opinion is milder than the verdict above.${gated
+        ? " The verdict comes from a hard trigger, which is a category rather than a quantity, so averaging cannot soften it."
+        : ""} A gap here is worth a look, not a correction.</p>`
+    : "";
   return `<section class="bd">
-    <strong>How the hybrid score was built</strong>
+    <strong>Second opinion: static scan + call graph + model</strong>
+    <p class="bdsub">A separate, continuous read, shown so every point is attributable. The risk verdict above is the one that orders the queue.</p>
     <table>${rows}<tr class="total"><td class="k">result</td><td class="n">${l.change_confidence}</td>
-      <td>change_confidence (${esc(l.risk_level)} risk) &mdash; ${esc(cites)}</td></tr></table>
+      <td>out of 100, where higher means less to be cautious about &mdash; ${esc(cites)}</td></tr></table>
+    ${note}
   </section>`;
 }
 

@@ -38,22 +38,84 @@ repo + platform config
   └─ graph.py     call graph with macro expansion, interrupt-context propagation,
   │               fan-in, blast radius, hardware / critical-section / busy-wait flags
   └─ evidence.py  the "why": reason-giving comments, git blame commit messages, known patterns
-  └─ llm.py       optional: any OpenAI-compatible model (GLM, DeepSeek). Explains, never scores.
+  └─ llm_new.py   optional: any OpenAI-compatible model. Static signal scan + call-graph
+  │               facts + model judgment, with every deduction recorded. Explains, never scores.
+  └─ hybrid.py    adapts llm_new to the call graph and hands score.py a grounded probability
   └─ score.py     the scoring flowchart, recording the route each function took
         ↓
   data JSON  (the parser ↔ viewer contract)  →  viewer.py  →  bullseye.html
 ```
 
+`llm.py` is the earlier single-purpose LLM layer, kept because `llm-check` uses it
+to test a connection without running an analysis.
+
 ### The scoring flowchart
 
-1. **Hard trigger?** Runs in interrupt context, writes a hardware register, critical section / interrupt masking, busy-wait or hardware delay, only ever runs inside a lock, services the watchdog → risk HIGH.
-2. Otherwise **direct callers**: 15 or more → HIGH, 5–14 → MEDIUM, under 5 → LOW.
-3. **Public API?** → at least MEDIUM.
-4. **LLM says it looks deliberate / defensive?** → raise risk one level (never lowers it).
-5. **Evidence for the why**: reason-giving comment or commit → confidence HIGH; known defensive pattern → MEDIUM; nothing → LOW.
-6. **Blind spots?** Calls through function pointers inside, the function is passed as a pointer somewhere, or two LLMs disagree → lower confidence one level.
+1. **Hard trigger?** Runs in interrupt context, writes a hardware register, critical
+   section / interrupt masking, busy-wait or hardware delay, only ever runs inside a
+   lock, services the watchdog → risk HIGH. This is a gate, not a term in a sum: the
+   kind of code where a wrong guess is dangerous is a category, and nothing averages
+   it back down.
+2. Otherwise the ambiguous case is combined in **log-odds**, and the result bucketed:
 
-Thresholds and triggers live in the platform config, not in code.
+   ```
+   logit(p) = w₁·structure + w₂·llm − w₃·disagreement + w₄·evidence
+   ```
+
+   where *structure* is the fan-in band, *evidence* is what documents the function,
+   and *llm* is the model's P(this oddity is deliberate).
+3. **Public API?** → a floor of at least MEDIUM, never a jump to HIGH.
+4. **Evidence for the why**: reason-giving comment or commit → confidence HIGH;
+   known defensive pattern → MEDIUM; nothing → LOW.
+5. **Blind spots?** Calls through function pointers inside, the function is passed as
+   a pointer somewhere, or two models disagree → lower confidence one level.
+
+Thresholds and triggers live in the platform config, not in code. The weights are
+hand-picked, not fitted to data — see the evaluation below for what that costs.
+
+### The LLM has to earn its influence
+
+Asked whether odd-looking code is deliberate, a model can always say yes, and a
+confident yes raises risk. Since a fluent guess and a real observation read the
+same, the answer is not judged — the model is made to **name its source**, and the
+source is checked here:
+
+| citation | resolves against |
+|---|---|
+| `comment:141` | a reason-giving comment at that source line |
+| `commit:8be86d4a2b` | the commit that introduced those lines |
+| `pattern:barrier_asm` | a known defensive pattern found in the code |
+| `signal:busy_wait` | a fact the static scan found in this function |
+
+Citations that do not resolve are dropped. If none survive, `p_deliberate` is pinned
+to 0.5 — in log-odds exactly zero — so the function is scored as though the model had
+never run. The model cannot move a score by asserting something, only by pointing at
+evidence that survives an independent check. `llm_new` validates when the reply
+arrives and `score.py` re-derives the valid ids and checks again, so a bug in one
+grader is not inherited by the other.
+
+Citing the static-scan signals matters more than it looks: half the LLM budget goes
+to the *least* understood functions, which by definition have no comment, commit or
+pattern. Without a citable fact drawn from the code itself, the rule would discard
+every review of exactly the code this tool exists to explain.
+
+### How well does it work
+
+`python -m bullseye eval data/freertos.json eval/freertos.json` compares the scores
+with hand-written expectations:
+
+| | agrees with the human label |
+|---|---|
+| FreeRTOS kernel | 7 / 9 |
+| NASA cFS (OSAL + PSP) | 5 / 6 |
+
+Both failures are visible in the output rather than hidden: `vListInsert` is scored
+MEDIUM where a human said HIGH, and `uxTaskGetNumberOfTasks` HIGH where a human said
+LOW.
+
+On grounding, across 120 reviewed functions the model issued 42 citations and
+invented **none**. 90 of those functions had nothing citable at all, and all 90 were
+correctly scored without the model's input.
 
 ### Platform configs ("input about the digital platform")
 
@@ -62,17 +124,26 @@ Thresholds and triggers live in the platform config, not in code.
 - `freertos-cm4f`: FreeRTOS kernel, GCC ARM_CM4F port, heap_4.
 - `cfs-mcp750-vxworks`: NASA cFS OSAL + PSP for the MCP750 PowerPC board on VxWorks. Root is the folder holding the `osal` and `PSP` repos.
 
-### Connecting an LLM (GLM and/or DeepSeek)
+### Connecting an LLM
 
-Any OpenAI-compatible chat endpoint works. A base URL or the full `/chat/completions` URL are both accepted.
+Any OpenAI-compatible chat endpoint works. A base URL or the full `/chat/completions`
+URL are both accepted. Settings go in a `.env` file at the project root (gitignored)
+or in the environment; a real environment variable always wins.
 
 ```bash
-# model 1: DeepSeek
-export BULLSEYE_LLM_URL=https://api.deepseek.com
-export BULLSEYE_LLM_KEY=<your DeepSeek key>
-export BULLSEYE_LLM_MODEL=deepseek-flash
+# the model that reviews functions
+export BULLSEYE_BACKEND=openai
+export BULLSEYE_LLM_URL=https://api.gonka-api.org/v1       # or any OpenAI-compatible base URL
+export BULLSEYE_LLM_KEY=<your key>
+export BULLSEYE_LLM_MODEL=deepseek-ai/DeepSeek-V4-Flash-0731
 
-# model 2 (optional second opinion; disagreement lowers confidence): GLM on Z.ai
+# hybrid scoring: weights for static, graph and model; and the range safety-critical
+# code is compressed into so it sorts to the top of the queue but keeps its ordering
+export BULLSEYE_WEIGHTS=0.4,0.3,0.3
+export BULLSEYE_SAFETY_CAP=35
+export BULLSEYE_WORKERS=6
+
+# optional second opinion; disagreement between models lowers confidence
 export BULLSEYE_LLM2_URL=https://api.z.ai/api/paas/v4          # mainland China: https://open.bigmodel.cn/api/paas/v4
 export BULLSEYE_LLM2_KEY=<your Z.ai key>
 export BULLSEYE_LLM2_MODEL=glm-5.1
@@ -84,7 +155,11 @@ python -m bullseye llm-check                  # one tiny request per model, prin
 python -m bullseye analyze ../repos/FreeRTOS-Kernel --platform freertos-cm4f --label "FreeRTOS kernel" --git --llm-top 60 -o data/freertos.json
 ```
 
-Windows PowerShell: `$env:BULLSEYE_LLM_URL="https://api.deepseek.com"` and so on.
+Requests retry with backoff on HTTP 429, which shared inference brokers return
+routinely under load. Each answered prompt is cached under `.bullseye_cache/`, so
+re-running after a scoring change costs nothing; editing the prompt invalidates it.
+
+Windows PowerShell: `$env:BULLSEYE_LLM_URL="https://api.gonka-api.org/v1"` and so on.
 
 Environment variables only live in the shell that set them. To keep the keys
 across terminals, copy `.env.example` to `.env` in the project root and fill it
