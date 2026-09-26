@@ -6,3 +6,9 @@ __pycache__/
 venv/
 # the analysed codebases are cloned here by fetch_repos.sh, never committed
 ../repos/
+
+# llm_new.py caches one JSON file per answered prompt
+.bullseye_cache/
+# any local env file, not just the literal ".env": env_new held a real key
+env*
+!env*.example

@@ -111,6 +111,13 @@ main > * { min-width: 0; }
 .tbox.info rect { fill: none; stroke: var(--rule); stroke-dasharray: 3 3; }
 .tbox.info text { fill: var(--muted); font-style: italic; }
 .thead { font-size: 11.5px; font-weight: 600; fill: var(--ink); font-family: var(--sans); }
+.bd { margin: 10px 0 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; }
+.bd table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 11.5px; }
+.bd td { padding: 1px 0; vertical-align: top; }
+.bd td.n { text-align: right; padding-right: 10px; white-space: nowrap; }
+.bd td.k { color: var(--muted); padding-right: 10px; white-space: nowrap; }
+.bd tr.total td { border-top: 1px solid var(--rule); padding-top: 4px; font-weight: 600; }
+.bd .ungrounded { color: var(--high); }
 .tskip { font-size: 10.5px; fill: var(--muted); font-style: italic; font-family: var(--sans); }
 .tpath { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; opacity: 0.85; }
 @media (prefers-reduced-motion: no-preference) {
@@ -417,6 +424,26 @@ function codeHtml(f) {
   }).join("");
 }
 
+/* llm_new's hybrid score, line by line: every point deducted is attributable */
+function breakdown(f) {
+  const l = f.llm;
+  if (!l || !l.score_breakdown || !l.score_breakdown.length) return "";
+  const rows = l.score_breakdown.map((line) => {
+    const m = line.match(/^(\S+)\s+(-?\d+)?\s*(.*)$/);
+    if (!m) return `<tr><td colspan="3">${esc(line)}</td></tr>`;
+    const cls = /UNGROUNDED|not applied/.test(m[3]) ? ' class="ungrounded"' : "";
+    return `<tr><td class="k">${esc(m[1])}</td><td class="n">${esc(m[2] || "")}</td><td${cls}>${esc(m[3])}</td></tr>`;
+  }).join("");
+  const cites = l.grounded
+    ? `cited ${l.cites.map(esc).join(", ")}`
+    : "no citation resolved, so the model could not move this score";
+  return `<section class="bd">
+    <strong>How the hybrid score was built</strong>
+    <table>${rows}<tr class="total"><td class="k">result</td><td class="n">${l.change_confidence}</td>
+      <td>change_confidence (${esc(l.risk_level)} risk) &mdash; ${esc(cites)}</td></tr></table>
+  </section>`;
+}
+
 function renderDetail() {
   const f = byId[S.sel];
   const key = `bullseye:${ds().meta.label}:${f.id}`, verdict = store.get(key);
@@ -435,6 +462,7 @@ function renderDetail() {
       ${f.why ? `<p>${esc(f.why)} <span class="muted">(LLM explanation, check against the evidence below)</span></p>` : ""}
       ${evidence}
       ${f.patterns.length ? `<p>Known defensive pattern in the code: ${esc(f.patterns.map(p => typeof p === "string" ? p : p.text).join("; "))}.</p>` : ""}
+      ${breakdown(f)}
       ${!evidence && !f.patterns.length && !f.why ? '<p class="muted">No comment, commit or known pattern explains this code.</p>' : ""}</section>
     <section><h3>Why this risk level</h3><ul>${f.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}
       ${notes.map(([k, v]) => `<li><span class="muted">${esc(TRIG[k] || k)}:</span> ${esc(v.slice(0, 3).join("; "))}</li>`).join("")}</ul>

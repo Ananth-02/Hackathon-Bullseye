@@ -7,7 +7,7 @@ from pathlib import Path
 from . import evidence as ev
 from .extract import collect_files, parse_file
 from .graph import build
-from .llm import LLM
+from .hybrid import HybridLLM
 from .score import open_questions, score
 
 PLATFORM_DIR = Path(__file__).parent / "platforms"
@@ -57,7 +57,7 @@ def analyze(root, platform, use_git=False, git_top=80, llm_top=60, label=None, p
     progress(f"{len(functions)} functions, {len(macros)} macros")
     nodes = build(functions, macros, decls, hdocs, cfg)
 
-    llm = LLM()
+    llm = HybridLLM(platform_info=cfg.get("description", ""), total_nodes=len(nodes))
     # rank for optional expensive steps: triggers first, then fan-in
     order = sorted(nodes.values(), key=lambda n: (-sum(n["flags"].values()), -n["fan_in"]))
     git_ids = {n["fn"].id for n in order[:git_top]} if use_git else set()
@@ -108,8 +108,20 @@ def analyze(root, platform, use_git=False, git_top=80, llm_top=60, label=None, p
             "callers": n["callers"], "callees": n["callees"], "refs_in": n["refs_in"], "via": n["via"],
             "fan_in": n["fan_in"], "blast_radius": n["blast_radius"],
             "indirect_calls": f.indirect_calls, "hw_lines": n["hw_lines"],
-            "llm": None if review is None else {"looks_deliberate": review.get("looks_deliberate"),
-                                                "models_disagree": review.get("models_disagree")},
+            "llm": None if review is None else {
+                "p_deliberate": review.get("p_deliberate"),
+                "cites": review.get("cites"),
+                "cites_rejected": review.get("cites_rejected"),
+                "grounded": review.get("grounded"),
+                "models_disagree": review.get("models_disagree"),
+                "change_confidence": review.get("change_confidence"),
+                "risk_level": review.get("risk_level"),
+                "criticality": review.get("criticality"),
+                "static_score": review.get("static_score"),
+                "graph_score": review.get("graph_score"),
+                "llm_confidence": review.get("llm_confidence"),
+                "score_breakdown": review.get("score_breakdown"),
+            },
             "code": f.code,
         })
     llm.save()

@@ -186,7 +186,13 @@ def llm_term(llm, evidence, patterns):
     real_evidence_ids = {f"comment:{e['line']}" for e in evidence if e["type"] == "comment"}
     real_evidence_ids |= {f"commit:{e['commit']}" for e in evidence if e["type"] == "commit"}
     real_pattern_ids = {f"pattern:{p['id']}" for p in patterns}
-    valid = [c for c in llm.get("cites", []) if c in real_evidence_ids or c in real_pattern_ids]
+    # A function that nothing documents still has verifiable facts found in its
+    # own code. Without these, the LLM budget -- deliberately aimed at the
+    # least-understood functions -- could never cite anything, and every review
+    # of exactly the code this tool exists to explain would be discarded.
+    real_signal_ids = {f"signal:{s}" for s in llm.get("signals", [])}
+    valid = [c for c in llm.get("cites", [])
+             if c in real_evidence_ids or c in real_pattern_ids or c in real_signal_ids]
 
     p = llm.get("p_deliberate", 0.5)
     if not valid:
