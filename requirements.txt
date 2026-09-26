@@ -1,2 +1,5 @@
 tree-sitter>=0.23
-tree-sitter-c>=0.23
+# 0.23.5 and later ship grammar ABI 15. The newest binding available on Python 3.9
+# is tree-sitter 0.23.2, which loads ABI 13-14 only and raises
+# "Incompatible Language version 15" at Parser(C).parse().
+tree-sitter-c>=0.23,<0.23.5

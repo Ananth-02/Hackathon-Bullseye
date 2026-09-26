@@ -20,6 +20,13 @@ pip install -r requirements.txt
 ./run_demo.sh             # analyse, build bullseye.html, run the evaluation
 ```
 
+Python 3.9 or newer. On 3.9 the newest `tree-sitter` binding is 0.23.2, which is
+why `requirements.txt` caps `tree-sitter-c` below 0.23.5: the later grammars ship
+an ABI that binding cannot load. The scripts call `python`, so it has to be on
+PATH (on Windows, an Anaconda install needs `Library\bin` on PATH too, or run
+them from Anaconda Prompt, otherwise `import ssl` fails and every LLM call dies
+with `unknown url type: https`).
+
 `bullseye.html` is self-contained: open it in any browser, no server needed. Prebuilt data for both codebases is in `data/`.
 
 ## Architecture
