@@ -7,7 +7,7 @@ Built for the Saab track at the Gothenburg Tech Week × Chalmers Hackathon 2026:
 
 ## Team
 
-- **[@Ananth-02](https://github.com/Ananth-02)** — pipeline, call graph, viewer
+- **Ananth** ([@Ananth-02](https://github.com/Ananth-02)) — pipeline, UI refinement, debugging, idea formation
 - **Eugene Dvoryankov** — scoring matrix, code refinement, debugging, idea formation
 - **Mary Wagura** — scoring matrix, code refinement, debugging, idea formation
 
