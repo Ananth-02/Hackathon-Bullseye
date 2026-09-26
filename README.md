@@ -63,7 +63,7 @@ Any OpenAI-compatible chat endpoint works. A base URL or the full `/chat/complet
 # model 1: DeepSeek
 export BULLSEYE_LLM_URL=https://api.deepseek.com
 export BULLSEYE_LLM_KEY=<your DeepSeek key>
-export BULLSEYE_LLM_MODEL=deepseek-v4-flash
+export BULLSEYE_LLM_MODEL=deepseek-flash
 
 # model 2 (optional second opinion; disagreement lowers confidence): GLM on Z.ai
 export BULLSEYE_LLM2_URL=https://api.z.ai/api/paas/v4          # mainland China: https://open.bigmodel.cn/api/paas/v4
