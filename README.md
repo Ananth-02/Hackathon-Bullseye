@@ -117,3 +117,9 @@ data/                analysed output for both codebases
 eval/                hand labels and results
 bullseye.html        prebuilt viewer with both codebases
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE). This covers Bullseye itself; the codebases it
+analyses (FreeRTOS kernel, NASA OSAL and PSP) are cloned by `fetch_repos.sh`,
+are not part of this repository, and keep their own licenses.
