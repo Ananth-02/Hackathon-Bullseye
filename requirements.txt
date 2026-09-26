@@ -3,3 +3,6 @@ tree-sitter>=0.23
 # is tree-sitter 0.23.2, which loads ABI 13-14 only and raises
 # "Incompatible Language version 15" at Parser(C).parse().
 tree-sitter-c>=0.23,<0.23.5
+
+# llm_new.py's OpenAI-compatible and Ollama backends post with requests
+requests>=2.28

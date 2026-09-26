@@ -481,8 +481,28 @@ class OpenAICompatBackend:
         return r.json()["choices"][0]["message"]["content"]
 
 
+def _default_backend() -> str:
+    """What to use when BULLSEYE_BACKEND is unset.
+
+    Defaulting to Claude meant a checkout with an OpenAI-compatible key set,
+    and no `anthropic` installed, failed with "No module named 'anthropic'" --
+    which points at the wrong problem entirely. Pick whatever is configured.
+    """
+    if os.getenv("BULLSEYE_LLM_URL") and os.getenv("BULLSEYE_LLM_MODEL"):
+        return "openai"
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "claude"
+    return "none"
+
+
 def get_backend(kind: str | None = None):
-    kind = (kind or os.getenv("BULLSEYE_BACKEND", "claude")).lower()
+    kind = (kind or os.getenv("BULLSEYE_BACKEND") or _default_backend()).lower()
+    if kind == "none":
+        raise RuntimeError(
+            "No model configured. Set BULLSEYE_LLM_URL, BULLSEYE_LLM_KEY and "
+            "BULLSEYE_LLM_MODEL (any OpenAI-compatible endpoint) in .env or the "
+            "environment. Without one Bullseye still runs: the rules score every "
+            "function and the LLM column reads 'offline'.")
     if kind == "ollama":
         return OllamaBackend()
     if kind == "openai":
