@@ -1,0 +1,133 @@
+"""Optional LLM layer. Works with any OpenAI-compatible chat endpoint (GLM, DeepSeek, ...).
+
+The LLM never sets the risk score. It writes the explanation, and may say that
+code "looks deliberate", which the scorer uses to raise risk by one level.
+A second model, if configured, is asked the same question; disagreement lowers
+confidence. Without configuration the whole tool runs offline.
+
+Environment:
+  BULLSEYE_LLM_URL    e.g. https://api.deepseek.com/v1/chat/completions
+  BULLSEYE_LLM_KEY, BULLSEYE_LLM_MODEL
+  BULLSEYE_LLM2_URL / BULLSEYE_LLM2_KEY / BULLSEYE_LLM2_MODEL   (optional second opinion)
+  BULLSEYE_LLM_EXTRA / BULLSEYE_LLM2_EXTRA  optional JSON merged into the request body,
+      e.g. '{"thinking": {"type": "disabled"}}' to switch off slow reasoning modes
+"""
+import concurrent.futures
+import hashlib
+import json
+import os
+import re
+import urllib.request
+from pathlib import Path
+
+PROMPT = """You are helping a new engineer understand legacy embedded C before changing it.
+Function `{name}` from `{file}` (lines {start}-{end}).
+Static-analysis facts: {facts}
+Callers: {callers}
+Comments found as evidence: {evidence}
+
+```c
+{code}
+```
+
+Reply with JSON only:
+{{"purpose": "one sentence",
+  "why": "2-3 sentences on why it is written this way; cite line numbers; say 'unknown' if the code gives no reason",
+  "looks_deliberate": "yes|no|unsure  (yes = contains code that looks redundant or odd but is probably protecting against hardware, timing or concurrency problems)",
+  "open_questions": ["max 3 questions an engineer should answer before changing it"]}}"""
+
+
+def _cfg(prefix):
+    url, key, model = (os.environ.get(f"{prefix}_{k}") for k in ("URL", "KEY", "MODEL"))
+    if not (url and model):
+        return None
+    url = url.rstrip("/")
+    if not url.endswith("/chat/completions"):
+        url += "/chat/completions"          # accept a base URL as well as the full endpoint
+    extra = json.loads(os.environ.get(f"{prefix}_EXTRA") or "{}")
+    return (url, key, model, extra)
+
+
+def configured():
+    return [c for c in (_cfg("BULLSEYE_LLM"), _cfg("BULLSEYE_LLM2")) if c]
+
+
+def _call(cfg, prompt, timeout=120):
+    url, key, model, extra = cfg
+    body = json.dumps({"model": model, "temperature": 0, "max_tokens": 900,
+                       "messages": [{"role": "user", "content": prompt}], **extra}).encode()
+    req = urllib.request.Request(url, body, {"Content-Type": "application/json",
+                                             **({"Authorization": f"Bearer {key}"} if key else {})})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        msg = json.load(r)["choices"][0]["message"]
+    txt = msg.get("content") or msg.get("reasoning_content") or ""
+    m = re.search(r"\{.*\}", txt, re.S)
+    return json.loads(m.group(0)) if m else None
+
+
+class LLM:
+    def __init__(self, cache_path=".bullseye_llm_cache.json"):
+        self.models = configured()
+        self.cache_path = Path(cache_path)
+        self.cache = json.loads(self.cache_path.read_text()) if self.cache_path.exists() else {}
+
+    @property
+    def mode(self):
+        return f"{len(self.models)} model(s)" if self.models else "offline"
+
+    def review_many(self, items, workers=6, progress=print):
+        """items: list of (node, evidence). Runs requests in parallel, returns {id: review}."""
+        out, done = {}, 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = {ex.submit(self.review, n, e): n["fn"].id for n, e in items}
+            for fut in concurrent.futures.as_completed(futs):
+                out[futs[fut]] = fut.result()
+                done += 1
+                if done % 10 == 0 or done == len(items):
+                    progress(f"LLM reviewed {done}/{len(items)}")
+        return out
+
+    def review(self, node, evidence):
+        if not self.models:
+            return None
+        f = node["fn"]
+        facts = {k: v for k, v in node["notes"].items() if v}
+        prompt = PROMPT.format(name=f.name, file=f.file, start=f.line_start, end=f.line_end,
+                               facts=json.dumps(facts)[:1500], callers=", ".join(node["callers"][:15]) or "none found",
+                               evidence=json.dumps([e["text"] for e in evidence])[:1500], code=f.code[:7000])
+        results = []
+        for cfg in self.models:
+            k = hashlib.sha1((cfg[2] + prompt).encode()).hexdigest()
+            if k not in self.cache:
+                try:
+                    self.cache[k] = _call(cfg, prompt)
+                except Exception as e:  # network / quota / bad JSON: degrade, never crash the run
+                    self.cache[k] = {"error": str(e)[:200]}
+            results.append(self.cache[k])
+        good = [r for r in results if r and "error" not in r]
+        if not good:
+            return None
+        verdicts = {str(r.get("looks_deliberate", "unsure")).lower() for r in good}
+        return {**good[0], "models_disagree": len(good) > 1 and len(verdicts) > 1}
+
+    def save(self):
+        if self.models:
+            self.cache_path.write_text(json.dumps(self.cache))
+
+
+def check():
+    """Send one tiny request to each configured model and report what came back."""
+    models = configured()
+    if not models:
+        print("No model configured. Set BULLSEYE_LLM_URL, BULLSEYE_LLM_KEY and BULLSEYE_LLM_MODEL.")
+        return 1
+    code = 0
+    for i, cfg in enumerate(models, 1):
+        try:
+            r = _call(cfg, 'Reply with JSON only: {"ok": true}', timeout=60)
+            print(f"model {i} ({cfg[2]} at {cfg[0]}): OK, replied {r}")
+        except Exception as e:
+            code = 1
+            detail = e.read().decode()[:300] if hasattr(e, "read") else ""
+            print(f"model {i} ({cfg[2]} at {cfg[0]}): FAILED: {e} {detail}")
+    return code

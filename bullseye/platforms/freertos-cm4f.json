@@ -1,0 +1,88 @@
+{
+  "name": "FreeRTOS kernel on ARM Cortex-M4F (GCC port, heap_4)",
+  "description": "Digital-platform input: which port and heap are built, where the peripherals live, and which symbols mean interrupt masking.",
+  "include": [
+    "*.c",
+    "include/*.h",
+    "portable/GCC/ARM_CM4F/*.c",
+    "portable/GCC/ARM_CM4F/*.h",
+    "portable/MemMang/heap_4.c"
+  ],
+  "exclude": [],
+  "public_headers": [
+    "include/*.h",
+    "portable/GCC/ARM_CM4F/portmacro.h"
+  ],
+  "hw_address_ranges": [
+    [
+      "0x40000000",
+      "0x5FFFFFFF"
+    ],
+    [
+      "0xE0000000",
+      "0xE00FFFFF"
+    ]
+  ],
+  "register_field_regex": "->\\s*(CR\\d?|SR|DR|CTRL|LOAD|VAL|ISER|ICER|ISPR|IP|CCR|SHPR\\d?|ICSR)\\b",
+  "barrier_asm_regex": "\\b(dsb|isb|dmb)\\b",
+  "irq_mask_asm_regex": "\\b(cpsid|cpsie|basepri|primask)\\b",
+  "isr_name_regex": "(Handler|IRQHandler|FromISR)$",
+  "isr_register_calls": [],
+  "critical_markers": [
+    "taskENTER_CRITICAL",
+    "taskENTER_CRITICAL_FROM_ISR",
+    "portENTER_CRITICAL",
+    "portDISABLE_INTERRUPTS",
+    "portSET_INTERRUPT_MASK_FROM_ISR",
+    "portSET_INTERRUPT_MASK",
+    "vPortRaiseBASEPRI",
+    "ulPortRaiseBASEPRI",
+    "taskDISABLE_INTERRUPTS",
+    "taskEXIT_CRITICAL",
+    "taskEXIT_CRITICAL_FROM_ISR",
+    "portEXIT_CRITICAL",
+    "portENABLE_INTERRUPTS",
+    "portCLEAR_INTERRUPT_MASK_FROM_ISR",
+    "vPortSetBASEPRI"
+  ],
+  "delay_functions": [],
+  "thresholds": {
+    "high": 15,
+    "medium": 5
+  },
+  "hard_triggers": [
+    "isr_context",
+    "writes_hw_register",
+    "critical_section",
+    "busy_wait",
+    "locked_context",
+    "watchdog"
+  ],
+  "function_macros": [
+    "portTASK_FUNCTION"
+  ],
+  "floor_triggers": [
+    "external_interface"
+  ],
+  "_note_triggers": "external_interface was a hard trigger in the first design; on FreeRTOS that marked 225 of 308 functions HIGH (every kernel API). It now sets a floor of MEDIUM. Move it back to hard_triggers to restore the original rule.",
+  "mmio_write_regex": "",
+  "lock_enter": [
+    "taskENTER_CRITICAL",
+    "taskENTER_CRITICAL_FROM_ISR",
+    "portENTER_CRITICAL",
+    "portDISABLE_INTERRUPTS",
+    "taskDISABLE_INTERRUPTS",
+    "portSET_INTERRUPT_MASK_FROM_ISR",
+    "vTaskSuspendAll"
+  ],
+  "lock_exit": [
+    "taskEXIT_CRITICAL",
+    "taskEXIT_CRITICAL_FROM_ISR",
+    "portEXIT_CRITICAL",
+    "portENABLE_INTERRUPTS",
+    "taskENABLE_INTERRUPTS",
+    "portCLEAR_INTERRUPT_MASK_FROM_ISR",
+    "xTaskResumeAll"
+  ],
+  "watchdog_ident_regex": "watchdog|^wdt|_wdt|iwdg|wwdg"
+}

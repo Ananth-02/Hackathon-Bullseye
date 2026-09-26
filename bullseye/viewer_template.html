@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bullseye: legacy code risk map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #E9EDF0; --surface: #F7F9FA; --ink: #16212B; --muted: #56646F; --rule: #C5CED5;
+  --accent: #1F5E96; --accent-soft: #D6E4F1;
+  --high: #B3261E; --high-soft: #F4DAD7; --med: #9A5F0C; --med-soft: #F3E5CC; --low: #2D7A4B; --low-soft: #D6ECDF;
+  --hw: #FBEFC5; --code-bg: #FBFCFD;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0F161C; --surface: #151F27; --ink: #DCE4EA; --muted: #8FA0AC; --rule: #2A3945;
+    --accent: #7AB2E3; --accent-soft: #1D3549;
+    --high: #F07A6E; --high-soft: #45211E; --med: #E2A94F; --med-soft: #3E2E14; --low: #62C08A; --low-soft: #173726;
+    --hw: #3B3413; --code-bg: #121B22;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0F161C; --surface: #151F27; --ink: #DCE4EA; --muted: #8FA0AC; --rule: #2A3945;
+  --accent: #7AB2E3; --accent-soft: #1D3549;
+  --high: #F07A6E; --high-soft: #45211E; --med: #E2A94F; --med-soft: #3E2E14; --low: #62C08A; --low-soft: #173726;
+  --hw: #3B3413; --code-bg: #121B22;
+}
+*, *::before, *::after { box-sizing: inherit; }
+html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); font: 14px/1.5 var(--sans); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+header { display: flex; align-items: center; gap: 18px; padding: 10px 18px; border-bottom: 1px solid var(--rule); background: var(--surface); flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
+.brand svg { flex: none; }
+.platform { color: var(--muted); font-size: 13px; flex: 1; min-width: 200px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 5px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.icon-btn { border: 1px solid var(--rule); background: transparent; border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+
+main { display: grid; grid-template-columns: 300px minmax(0, 1fr) 440px; min-height: 0; }
+.col { min-height: 0; min-width: 0; overflow: auto; }
+main > * { min-width: 0; }
+.queue { border-right: 1px solid var(--rule); background: var(--surface); display: flex; flex-direction: column; overflow: hidden; }
+.center { display: flex; flex-direction: column; }
+.detail { border-left: 1px solid var(--rule); background: var(--surface); }
+
+.qtools { padding: 12px 14px 8px; border-bottom: 1px solid var(--rule); display: grid; gap: 8px; }
+.qtools input, .qtools select { width: 100%; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); }
+.qcount { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; gap: 8px; }
+.qcount button { border: 0; background: none; color: var(--accent); padding: 0; cursor: pointer; font-size: 12px; }
+.matrix { display: grid; grid-template-columns: 58px repeat(3, 1fr); gap: 3px; font-size: 11px; }
+.matrix .mh { color: var(--muted); text-align: center; align-self: end; line-height: 1.2; }
+.matrix .rh { color: var(--muted); align-self: center; line-height: 1.2; }
+.matrix button { border: 1px solid transparent; border-radius: 4px; padding: 5px 0; cursor: pointer; font: 600 13px/1.2 var(--sans); }
+.matrix button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.matrix button:disabled { opacity: 0.45; cursor: default; }
+.m-high { background: var(--high-soft); color: var(--high); }
+.m-medium { background: var(--med-soft); color: var(--med); }
+.m-low { background: var(--low-soft); color: var(--low); }
+.qlist { overflow: auto; flex: 1; }
+.qrow { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: center; width: 100%; text-align: left; padding: 7px 14px; border: 0; border-bottom: 1px solid var(--rule); background: transparent; cursor: pointer; }
+.qrow:hover { background: var(--paper); }
+.qrow[aria-current="true"] { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.qname { font-family: var(--mono); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qfile { display: block; font-family: var(--sans); color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot.high { background: var(--high); } .dot.medium { background: var(--med); } .dot.low { background: var(--low); }
+.conf { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+.pane { padding: 14px 18px 6px; }
+.pane h2 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+.pane p.hint { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; max-width: 80ch; }
+.graph-wrap { border-bottom: 1px solid var(--rule); flex: 1 1 auto; min-height: 320px; }
+#graph, #track { padding: 0 12px; }
+#graph svg, #track svg { width: 100%; height: auto; display: block; }
+.track-wrap { flex: none; padding-bottom: 14px; }
+.gnode { cursor: pointer; }
+.gnode rect.box { fill: var(--surface); stroke: var(--rule); }
+.gnode:hover rect.box, .gnode:focus-visible rect.box { stroke: var(--ink); }
+.gnode:focus { outline: none; }
+.gnode.sel rect.box { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.gnode text { font-family: var(--mono); font-size: 12px; fill: var(--ink); }
+.gnode text.sub { font-family: var(--sans); font-size: 10.5px; fill: var(--muted); }
+.gnode.more rect.box, .gnode.ghost rect.box { fill: transparent; stroke-dasharray: 3 3; }
+.gnode.ghost { cursor: default; } .gnode.ghost text { font-family: var(--sans); }
+.gnode.more text { font-family: var(--sans); fill: var(--accent); }
+.bar.high { fill: var(--high); } .bar.medium { fill: var(--med); } .bar.low { fill: var(--low); }
+.edge { fill: none; stroke: var(--rule); stroke-width: 1.3; }
+.edge.ref { stroke-dasharray: 4 3; }
+.edge.hot { stroke: var(--accent); stroke-width: 1.6; }
+.colhead { font-family: var(--sans); font-size: 11px; fill: var(--muted); }
+
+.tbox rect { fill: var(--surface); stroke: var(--rule); }
+.tbox text { font-size: 11px; fill: var(--muted); font-family: var(--sans); }
+.tbox.on rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+.tbox.on text { fill: var(--ink); font-weight: 500; }
+.tbox.on.high rect { fill: var(--high-soft); stroke: var(--high); }
+.tbox.on.medium rect { fill: var(--med-soft); stroke: var(--med); }
+.tbox.on.low rect { fill: var(--low-soft); stroke: var(--low); }
+.thead { font-size: 11.5px; font-weight: 600; fill: var(--ink); font-family: var(--sans); }
+.tskip { font-size: 10.5px; fill: var(--muted); font-style: italic; font-family: var(--sans); }
+.tpath { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; opacity: 0.85; }
+@media (prefers-reduced-motion: no-preference) {
+  .tpath { stroke-dasharray: 2400; stroke-dashoffset: 2400; animation: draw 0.8s ease-out forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+}
+
+.d { padding: 16px 20px 40px; }
+.d h1 { font-family: var(--mono); font-size: 18px; font-weight: 500; margin: 0; word-break: break-all; }
+.loc { color: var(--muted); font-size: 12.5px; margin: 2px 0 12px; }
+.badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.badge { border-radius: 4px; padding: 3px 9px; font-size: 12.5px; font-weight: 600; border: 1px solid; }
+.badge.high { color: var(--high); background: var(--high-soft); border-color: var(--high); }
+.badge.medium { color: var(--med); background: var(--med-soft); border-color: var(--med); }
+.badge.low { color: var(--low); background: var(--low-soft); border-color: var(--low); }
+.badge.conf { color: var(--ink); background: transparent; border-color: var(--rule); font-weight: 500; }
+.action { font-size: 13.5px; margin: 0 0 14px; }
+.d section { border-top: 1px solid var(--rule); padding: 12px 0 4px; }
+.d h3 { font-size: 12.5px; font-weight: 600; margin: 0 0 6px; color: var(--muted); }
+.d p { margin: 0 0 8px; max-width: 70ch; }
+.d ul { margin: 0 0 8px; padding-left: 18px; }
+.d li { margin-bottom: 4px; }
+.ev { display: block; width: 100%; text-align: left; border: 0; border-left: 2px solid var(--rule); background: transparent; padding: 3px 0 3px 10px; margin-bottom: 6px; }
+button.ev { cursor: pointer; }
+button.ev:hover { border-left-color: var(--accent); }
+.ev .src { font-family: var(--mono); font-size: 11.5px; color: var(--muted); display: block; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.chip { font-family: var(--mono); font-size: 11.5px; border: 1px solid var(--rule); border-radius: 4px; padding: 2px 7px; background: var(--paper); cursor: pointer; }
+.chip:hover { border-color: var(--accent); }
+.muted { color: var(--muted); }
+pre.code { margin: 0; font: 12px/1.55 var(--mono); background: var(--code-bg); border: 1px solid var(--rule); border-radius: 6px; overflow: auto; max-height: 460px; padding: 6px 0; }
+.ln { display: block; padding: 0 10px 0 0; white-space: pre; }
+.ln .n { display: inline-block; width: 44px; text-align: right; padding-right: 12px; color: var(--muted); user-select: none; }
+.ln.hw { background: var(--hw); }
+.ln.evl { box-shadow: inset 3px 0 0 var(--accent); }
+.ln.flash { background: var(--accent-soft); }
+.ln .c { color: var(--muted); font-style: italic; }
+.verdict { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.verdict button { border: 1px solid var(--rule); background: transparent; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+.verdict button:hover { border-color: var(--accent); }
+textarea { width: 100%; min-height: 60px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); padding: 6px 8px; font-size: 13px; }
+.empty { padding: 40px 20px; color: var(--muted); }
+
+@media (max-width: 1180px) {
+  body, .app { height: auto; }
+  main { grid-template-columns: 260px minmax(0, 1fr); }
+  .detail { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--rule); }
+  .col { overflow: visible; } .qlist { max-height: 60vh; }
+}
+@media (max-width: 720px) {
+  main { grid-template-columns: 1fr; }
+  .queue { border-right: 0; border-bottom: 1px solid var(--rule); }
+  #graph, #track { overflow-x: auto; } #graph svg, #track svg { min-width: 720px; }
+  header { gap: 10px; } .platform { flex-basis: 100%; order: 3; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="11" cy="11" r="2.2" fill="var(--high)"/></svg>
+      Bullseye
+    </div>
+    <div class="seg" id="dsSwitch" role="group" aria-label="Codebase"></div>
+    <div class="platform" id="platform"></div>
+    <button class="icon-btn" id="themeBtn" aria-label="Switch between light and dark theme">Theme</button>
+  </header>
+  <main>
+    <aside class="col queue" aria-label="Review queue">
+      <div class="qtools">
+        <input id="q" type="search" placeholder="Find a function or file" aria-label="Find a function or file">
+        <select id="filter" aria-label="Which functions to list">
+          <option value="review">Review first: high risk, least understood</option>
+          <option value="hw">Touches hardware or interrupts</option>
+          <option value="all">All functions, riskiest first</option>
+        </select>
+        <div class="matrix" id="matrix" role="group" aria-label="Filter by risk and confidence"></div>
+        <div class="qcount" id="qcount"></div>
+      </div>
+      <div class="qlist" id="qlist"></div>
+    </aside>
+    <section class="col center">
+      <div class="graph-wrap">
+        <div class="pane">
+          <h2>Dependency graph</h2>
+          <p class="hint">Who calls this function (left) and what it calls (right). Dashed lines mean it is passed as a pointer, so the caller at runtime is hidden. Click any box to move there.</p>
+        </div>
+        <div id="graph"></div>
+      </div>
+      <div class="track-wrap">
+        <div class="pane">
+          <h2>How this score was reached</h2>
+          <p class="hint">The scoring flowchart, read left to right. The blue route is the one this function took.</p>
+        </div>
+        <div id="track"></div>
+      </div>
+    </section>
+    <aside class="col detail" id="detail" aria-live="polite"></aside>
+  </main>
+</div>
+<script>
+const DATASETS = /*__BULLSEYE_DATA__*/[];
+const RISK = { high: 0, medium: 1, low: 2 };
+const CONF = { low: 0, medium: 1, high: 2 };
+const HW = ["isr_context", "writes_hw_register", "critical_section", "busy_wait", "locked_context", "watchdog"];
+const TRIG = { isr_context: "Interrupt context", writes_hw_register: "Hardware register writes",
+  critical_section: "Critical section / interrupt masking", busy_wait: "Busy-wait or timing delay", external_interface: "Public API",
+  locked_context: "Only runs inside a lock", watchdog: "Watchdog" };
+const ACTION = {
+  "high/high": "Don't change without a hardware test. The reason is documented, and it matters.",
+  "high/medium": "Review first. Likely load-bearing, and the reason is only partly clear.",
+  "high/low": "Review first. Likely load-bearing, and nothing explains why.",
+  "medium/high": "Change with care and check the callers listed below.",
+  "medium/medium": "Change with care and check the callers listed below.",
+  "medium/low": "Change with care. Ask someone who knows it before trusting the explanation.",
+  "low/high": "Safe to change.", "low/medium": "Quick human check before changing.", "low/low": "Quick human check before changing." };
+
+const S = { ds: 0, sel: null, filter: "review", cell: null, q: "", expand: { in: false, out: false } };
+const CELL_TONE = { "high/low": "high", "high/medium": "high", "high/high": "high", "medium/low": "medium", "medium/medium": "medium", "medium/high": "medium", "low/low": "low", "low/medium": "low", "low/high": "low" };
+let byId = {};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const short = (id) => id.split("::").pop();
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+const ds = () => DATASETS[S.ds];
+const importance = (a, b) => RISK[a.risk] - RISK[b.risk] || CONF[a.confidence] - CONF[b.confidence] || b.fan_in - a.fan_in;
+
+function loadDataset(i) {
+  S.ds = i; S.q = ""; $("q").value = ""; S.cell = null;
+  byId = Object.fromEntries(ds().functions.map((f) => [f.id, f]));
+  const m = ds().meta;
+  $("platform").textContent = `${m.platform}. ${ds().functions.length} functions in ${m.files} files` +
+    (m.commit ? `, commit ${m.commit}` : "") + `. LLM: ${m.llm}.` + (m.git_evidence ? " Git history mined." : "");
+  document.querySelectorAll("#dsSwitch button").forEach((b, j) => b.setAttribute("aria-pressed", String(j === i)));
+  const list = queue();
+  S.sel = null;
+  select(list.length ? list[0].id : ds().functions[0].id);
+}
+
+function queue() {
+  let fs = ds().functions.slice();
+  const q = S.q.trim().toLowerCase();
+  if (q) return fs.filter((f) => f.name.toLowerCase().includes(q) || f.file.toLowerCase().includes(q)).sort(importance);
+  if (S.cell) return fs.filter((f) => f.risk + "/" + f.confidence === S.cell).sort((a, b) => b.blast_radius - a.blast_radius || b.fan_in - a.fan_in);
+  if (S.filter === "review") return fs.filter((f) => f.risk === "high")
+    .sort((a, b) => CONF[a.confidence] - CONF[b.confidence] || b.blast_radius - a.blast_radius || b.fan_in - a.fan_in);
+  if (S.filter === "hw") fs = fs.filter((f) => HW.some((t) => f.flags[t]));
+  return fs.sort(importance);
+}
+
+function renderMatrix() {
+  const counts = {};
+  ds().functions.forEach((f) => { const k = f.risk + "/" + f.confidence; counts[k] = (counts[k] || 0) + 1; });
+  const confs = ["high", "medium", "low"];
+  let h = `<span></span>${confs.map((c) => `<span class="mh">${c[0].toUpperCase() + c.slice(1)}<br>conf.</span>`).join("")}`;
+  ["high", "medium", "low"].forEach((r) => {
+    h += `<span class="rh">${r[0].toUpperCase() + r.slice(1)} risk</span>`;
+    confs.forEach((c) => { const k = r + "/" + c, n = counts[k] || 0;
+      h += `<button class="m-${CELL_TONE[k]}" data-cell="${k}" aria-pressed="${S.cell === k}" ${n ? "" : "disabled"} title="${esc(ACTION[k])}" aria-label="${r} risk, ${c} confidence: ${n} functions">${n}</button>`; });
+  });
+  $("matrix").innerHTML = h;
+}
+
+function renderQueue() {
+  renderMatrix();
+  const list = queue();
+  const what = S.q ? "matching the search" : S.cell ? `with ${S.cell.split("/")[0]} risk, ${S.cell.split("/")[1]} confidence` : S.filter === "review" ? "high risk, least understood first" : "";
+  $("qcount").innerHTML = `<span>${list.length} function${list.length === 1 ? "" : "s"} ${esc(what)}</span>` + (S.cell ? `<button data-clearcell>Show all</button>` : "");
+  $("qlist").innerHTML = list.map((f) => `
+    <button class="qrow" data-id="${esc(f.id)}" aria-current="${f.id === S.sel}">
+      <span class="dot ${f.risk}" title="${f.risk} risk"></span>
+      <span class="qname">${esc(f.name)}<span class="qfile">${esc(f.file)}:${f.lines[0]}</span></span>
+      <span class="conf">${f.confidence} conf.</span>
+    </button>`).join("") || `<div class="empty">No function matches. Clear the search or choose another list.</div>`;
+}
+
+function select(id) {
+  if (!byId[id]) return;
+  if (S.sel !== id) S.expand = { in: false, out: false };
+  S.sel = id;
+  renderQueue(); renderGraph(); renderTrack(); renderDetail();
+  const row = document.querySelector(`.qrow[data-id="${CSS.escape(id)}"]`);
+  if (row) row.scrollIntoView({ block: "nearest" });
+}
+
+/* dependency graph: five columns around the selected function */
+function renderGraph() {
+  const f = byId[S.sel];
+  const W = 900, NW = 164, NH = 34, GAP = 12, xs = [92, 271, 450, 629, 808];
+  const pick = (ids, n, not = new Set()) => { const all = [...new Set(ids)].filter((i) => byId[i] && i !== f.id && !not.has(i)).map((i) => byId[i]).sort(importance);
+    return { shown: all.slice(0, n), hidden: Math.max(0, all.length - n) }; };
+  const c1 = pick(f.callers.concat(f.refs_in), S.expand.in ? 60 : 5);
+  const k1 = pick(f.callees, S.expand.out ? 60 : 5);
+  const near = new Set([...c1.shown, ...k1.shown].map((x) => x.id));
+  const c2 = pick(c1.shown.flatMap((x) => x.callers), 6, near);
+  const k2 = pick(k1.shown.flatMap((x) => x.callees), 6, near);
+  const isrNote = (f.flag_notes.isr_context || [""])[0];
+  const hwRoot = f.flags.isr_context && !f.callers.length && !isrNote.startsWith("called from");
+  if (hwRoot) c1.shown.unshift({ id: "__irq__", name: "hardware interrupt", file: "", risk: "high", confidence: "high", fan_in: 0, callers: [], callees: [f.id], ghost: true });
+  const cols = [c2.shown, c1.shown, [f], k1.shown, k2.shown];
+  const toggle = [false, !!(c1.hidden || S.expand.in), false, !!(k1.hidden || S.expand.out), false];
+  const rows = Math.max(...cols.map((c, i) => c.length + (toggle[i] ? 1 : 0)), 1);
+  const H = 40 + rows * (NH + GAP);
+  const pos = {};
+  let nodes = "", edges = "";
+  cols.forEach((col, ci) => {
+    const n = col.length + (toggle[ci] ? 1 : 0), top = 36 + (rows - n) * (NH + GAP) / 2;
+    col.forEach((g, ri) => {
+      const x = xs[ci] - NW / 2, y = top + ri * (NH + GAP);
+      pos[g.id] = { x, y };
+      const label = g.name.length > 21 ? g.name.slice(0, 20) + "…" : g.name;
+      if (g.ghost) { nodes += `<g class="gnode ghost"><title>${esc(isrNote)}</title><rect class="box" x="${x}" y="${y}" width="${NW}" height="${NH}" rx="5"/>
+        <text x="${x + 12}" y="${y + 15}">${esc(g.name)}</text><text class="sub" x="${x + 12}" y="${y + 28}">no software caller</text></g>`; return; }
+      nodes += `<g class="gnode ${g.id === f.id ? "sel" : ""}" data-id="${esc(g.id)}" tabindex="0" role="button" aria-label="${esc(g.name)}, ${g.risk} risk">
+        <title>${esc(g.name)} (${esc(g.file)}): ${g.risk} risk, ${g.confidence} confidence</title>
+        <rect class="box" x="${x}" y="${y}" width="${NW}" height="${NH}" rx="5"/>
+        <rect class="bar ${g.risk}" x="${x}" y="${y}" width="4" height="${NH}" rx="1"/>
+        <text x="${x + 12}" y="${y + 15}">${esc(label)}</text>
+        <text class="sub" x="${x + 12}" y="${y + 28}">${g.risk} risk, ${g.fan_in} caller${g.fan_in === 1 ? "" : "s"}</text></g>`;
+    });
+    if (toggle[ci]) {
+      const dir = ci === 1 ? "in" : "out", open = S.expand[dir], hidden = ci === 1 ? c1.hidden : k1.hidden;
+      const y = top + col.length * (NH + GAP), x = xs[ci] - NW / 2;
+      nodes += `<g class="gnode more" data-more="${dir}" tabindex="0" role="button">
+        <rect class="box" x="${x}" y="${y}" width="${NW}" height="${NH - 6}" rx="5"/>
+        <text x="${xs[ci]}" y="${y + 18}" text-anchor="middle">${open ? "Show top 5 only" : `Show ${hidden} more`}</text></g>`;
+    }
+  });
+  const link = (a, b, cls) => { const p = pos[a], q = pos[b]; if (!p || !q) return "";
+    const x1 = p.x + NW, y1 = p.y + NH / 2, x2 = q.x, y2 = q.y + NH / 2, mx = (x1 + x2) / 2;
+    return `<path class="edge ${cls}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`; };
+  c2.shown.forEach((a) => c1.shown.forEach((b) => { if (b.callers.includes(a.id)) edges += link(a.id, b.id, ""); }));
+  c1.shown.forEach((a) => { edges += link(a.id, f.id, f.callers.includes(a.id) || a.ghost ? "hot" : "ref hot"); });
+  k1.shown.forEach((b) => { edges += link(f.id, b.id, "hot"); });
+  k1.shown.forEach((a) => k2.shown.forEach((b) => { if (a.callees.includes(b.id)) edges += link(a.id, b.id, ""); }));
+  const heads = ["Their callers", `Called by: ${f.fan_in}${f.refs_in.length ? `, pointer: ${f.refs_in.length}` : ""}`, "Selected", `Calls: ${f.callees.length}`, "Their calls"];
+  const headSvg = heads.map((h, i) => `<text class="colhead" x="${xs[i]}" y="20" text-anchor="middle">${esc(h)}</text>`).join("");
+  $("graph").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Dependency graph around ${esc(f.name)}">${headSvg}${edges}${nodes}</svg>`;
+}
+
+/* scoring track: the flowchart with the route this function took */
+function renderTrack() {
+  const f = byId[S.sel], th = ds().meta.thresholds || { high: 15, medium: 5 };
+  const inv = { high: "low", medium: "medium", low: "high" };
+  const stages = [
+    { t: "Hard trigger?", o: [["trigger:yes", "Yes: risk HIGH", "high"], ["trigger:no", "None"]] },
+    { t: "Direct callers", o: [["fanin:high", `${th.high}+: HIGH`, "high"], ["fanin:medium", `${th.medium}–${th.high - 1}: MEDIUM`, "medium"], ["fanin:low", `Under ${th.medium}: LOW`, "low"]] },
+    { t: "Public API?", o: [["api:yes", "Yes: min. MEDIUM", "medium"], ["api:no", "No"]] },
+    { t: "LLM: deliberate?", o: [["llm:yes", "Yes: raise risk"], ["llm:no", "No"], ["llm:offline", "Not run (offline)"]] },
+    { t: "Evidence (conf.)", o: [["evidence:comment", "Comment: HIGH", "low"], ["evidence:commit", "Commit: HIGH", "low"], ["evidence:pattern", "Pattern: MEDIUM", "medium"], ["evidence:none", "None: LOW", "high"]] },
+    { t: "Blind spots?", o: [["downgrade:yes", "Yes: lower conf."], ["downgrade:no", "No"]] },
+    { t: "Result", o: [["result", `${f.risk.toUpperCase()} risk`, f.risk], ["result2", `${f.confidence} confidence`, inv[f.confidence]]] },
+  ];
+  const W = 900, cw = W / stages.length, bw = cw - 14, bh = 30, top = 32;
+  const on = new Set(f.score_path.concat(["result"]));
+  let svg = "", pts = [];
+  stages.forEach((s, i) => {
+    const cx = i * cw + cw / 2;
+    svg += `<text class="thead" x="${cx}" y="16" text-anchor="middle">${esc(s.t)}</text>`;
+    let hit = null;
+    s.o.forEach(([id, label, tone], j) => {
+      const y = top + j * (bh + 8), lit = on.has(id) || (id === "result2");
+      if (on.has(id) && hit === null) hit = y + bh / 2;
+      svg += `<g class="tbox ${lit ? "on " + (tone || "") : ""}"><rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${bh}" rx="5"/>
+        <text x="${cx}" y="${y + 19}" text-anchor="middle">${esc(label)}</text></g>`;
+    });
+    if (hit === null) { hit = top - 6; svg += `<text class="tskip" x="${cx}" y="${top + s.o.length * (bh + 8) + 8}" text-anchor="middle">skipped</text>`; }
+    pts.push([i * cw + (cw - bw) / 2, hit], [i * cw + (cw + bw) / 2, hit]);
+  });
+  let d = `M${pts[0][0] - 6},${pts[0][1]}`;
+  for (let i = 1; i < pts.length; i++) {
+    const [x, y] = pts[i], [px, py] = pts[i - 1];
+    d += i % 2 ? ` L${x},${y}` : ` C${(px + x) / 2},${py} ${(px + x) / 2},${y} ${x},${y}`;
+  }
+  const H = top + 4 * (bh + 8) + 6;
+  $("track").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Scoring route for ${esc(f.name)}: ${esc(f.score_path.join(", "))}"><path class="tpath" d="${d}"/>${svg}</svg>`;
+}
+
+/* detail panel */
+function codeHtml(f) {
+  const hw = new Set(f.hw_lines), ev = new Set(f.evidence.filter((e) => e.line).map((e) => e.line));
+  let inC = false;
+  return f.code.split("\n").map((l, i) => {
+    const n = f.lines[0] + i;
+    let h = "", rest = l;
+    while (rest.length) {
+      if (inC) { const k = rest.indexOf("*/"); if (k < 0) { h += `<span class="c">${esc(rest)}</span>`; rest = ""; } else { h += `<span class="c">${esc(rest.slice(0, k + 2))}</span>`; rest = rest.slice(k + 2); inC = false; } continue; }
+      const a = rest.indexOf("/*"), b = rest.indexOf("//");
+      if (b >= 0 && (a < 0 || b < a)) { h += esc(rest.slice(0, b)) + `<span class="c">${esc(rest.slice(b))}</span>`; rest = ""; }
+      else if (a >= 0) { h += esc(rest.slice(0, a)); rest = rest.slice(a); inC = true; }
+      else { h += esc(rest); rest = ""; }
+    }
+    return `<span class="ln${hw.has(n) ? " hw" : ""}${ev.has(n) ? " evl" : ""}" data-n="${n}"><span class="n">${n}</span>${h}</span>`;
+  }).join("");
+}
+
+function renderDetail() {
+  const f = byId[S.sel];
+  const key = `bullseye:${ds().meta.label}:${f.id}`, verdict = store.get(key);
+  const notes = Object.entries(f.flag_notes).filter(([, v]) => v && v.length);
+  const evidence = f.evidence.map((e) => e.type === "commit"
+    ? `<div class="ev"><span class="src">commit ${esc(e.commit)}</span>${esc(e.text)}</div>`
+    : `<button class="ev" data-line="${e.line}"><span class="src">comment, line ${e.line}</span>${esc(e.text)}</button>`).join("");
+  const chips = (ids) => ids.length ? `<div class="chips">${ids.slice(0, 40).map((i) => `<button class="chip" data-id="${esc(i)}">${esc(short(i))}</button>`).join("")}${ids.length > 40 ? `<span class="muted">and ${ids.length - 40} more</span>` : ""}</div>` : `<p class="muted">None found.</p>`;
+  $("detail").innerHTML = `<div class="d">
+    <h1>${esc(f.name)}</h1>
+    <div class="loc">${esc(f.file)}, lines ${f.lines[0]}–${f.lines[1]}${f.static ? ", file-local (static)" : ""}${f.flags.external_interface ? ", public API" : ""}</div>
+    <div class="badges"><span class="badge ${f.risk}">${f.risk.toUpperCase()} RISK</span><span class="badge conf">Confidence: ${f.confidence}</span></div>
+    <p class="action">${esc(ACTION[f.risk + "/" + f.confidence])}</p>
+    <section><h3>Purpose</h3><p>${f.purpose ? esc(f.purpose) : '<span class="muted">No description in the source. Run with an LLM configured to generate one.</span>'}</p></section>
+    <section><h3>Why it is written this way</h3>
+      ${f.why ? `<p>${esc(f.why)} <span class="muted">(LLM explanation, check against the evidence below)</span></p>` : ""}
+      ${evidence}
+      ${f.patterns.length ? `<p>Known defensive pattern in the code: ${esc(f.patterns.join("; "))}.</p>` : ""}
+      ${!evidence && !f.patterns.length && !f.why ? '<p class="muted">No comment, commit or known pattern explains this code.</p>' : ""}</section>
+    <section><h3>Why this risk level</h3><ul>${f.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}
+      ${notes.map(([k, v]) => `<li><span class="muted">${esc(TRIG[k] || k)}:</span> ${esc(v.slice(0, 3).join("; "))}</li>`).join("")}</ul>
+      <p class="muted">Blast radius: ${f.blast_radius} function${f.blast_radius === 1 ? "" : "s"} can reach this one through calls.</p></section>
+    ${f.confidence_notes.length ? `<section><h3>What the tool cannot see</h3><ul>${f.confidence_notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></section>` : ""}
+    ${f.open_questions.length ? `<section><h3>Answer before changing it</h3><ul>${f.open_questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul></section>` : ""}
+    <section><h3>Called by</h3>${!f.callers.length && f.flags.isr_context && !(f.flag_notes.isr_context || [""])[0].startsWith("called from") ? `<p>The hardware, not other code: ${esc(f.flag_notes.isr_context[0])}.</p>` : chips(f.callers)}${f.refs_in.length ? `<h3>Passed as a pointer in</h3>${chips(f.refs_in)}` : ""}</section>
+    <section><h3>Calls</h3>${chips(f.callees)}</section>
+    <section><h3>Source</h3><p class="muted">Yellow lines touch hardware or interrupts. A blue edge marks a line quoted as evidence; click the quote to jump to it.</p><pre class="code" id="code">${codeHtml(f)}</pre></section>
+    <section><h3>Your review</h3>
+      <div class="verdict">
+        <button data-verdict="confirmed">Confirm score</button><button data-verdict="corrected">Correct it</button>
+        <span class="muted" id="vstate">${verdict ? `You ${verdict.v} this on ${esc(verdict.at)}.` : "Not reviewed yet."}</span>
+      </div>
+      <textarea id="vnote" placeholder="The real reason for this code, if you know it. Saved in this browser with the function." aria-label="Review note">${esc(verdict?.note || "")}</textarea>
+    </section></div>`;
+  $("detail").scrollTop = 0;
+}
+
+document.addEventListener("click", (e) => {
+  const n = e.target.closest("[data-id]");
+  if (n) return select(n.dataset.id);
+  const cell = e.target.closest("[data-cell]");
+  if (cell) { S.cell = S.cell === cell.dataset.cell ? null : cell.dataset.cell; S.q = ""; $("q").value = ""; const l = queue(); renderQueue(); if (l.length) select(l[0].id); return; }
+  if (e.target.closest("[data-clearcell]")) { S.cell = null; return renderQueue(); }
+  const m = e.target.closest("[data-more]");
+  if (m) { S.expand[m.dataset.more] = !S.expand[m.dataset.more]; return renderGraph(); }
+  const ev = e.target.closest("[data-line]");
+  if (ev) { const ln = document.querySelector(`#code .ln[data-n="${ev.dataset.line}"]`);
+    if (ln) { ln.scrollIntoView({ block: "center", behavior: "smooth" }); ln.classList.add("flash"); setTimeout(() => ln.classList.remove("flash"), 1400); } return; }
+  const v = e.target.closest("[data-verdict]");
+  if (v) { const f = byId[S.sel], rec = { v: v.dataset.verdict, note: $("vnote").value, at: new Date().toISOString().slice(0, 10) };
+    store.set(`bullseye:${ds().meta.label}:${f.id}`, rec); $("vstate").textContent = `You ${rec.v} this on ${rec.at}.`; }
+});
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches(".gnode")) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); }
+});
+$("q").addEventListener("input", (e) => { S.q = e.target.value; renderQueue(); });
+$("filter").addEventListener("change", (e) => { S.filter = e.target.value; S.cell = null; renderQueue(); });
+$("themeBtn").addEventListener("click", () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark"; store.set("bullseye:theme", document.documentElement.dataset.theme);
+});
+const savedTheme = store.get("bullseye:theme"); if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+$("dsSwitch").innerHTML = DATASETS.map((d, i) => `<button data-ds="${i}">${esc(d.meta.label)}</button>`).join("");
+$("dsSwitch").addEventListener("click", (e) => { const b = e.target.closest("[data-ds]"); if (b) loadDataset(+b.dataset.ds); });
+if (DATASETS.length) loadDataset(0); else $("detail").innerHTML = '<div class="empty">No data in this page. Build it with: python -m bullseye viewer data.json -o bullseye.html</div>';
+</script>
+</body>
+</html>

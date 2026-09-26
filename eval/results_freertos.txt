@@ -1,0 +1,12 @@
+function                         expected   got        conf     note
+xPortSysTickHandler              high       high       high     OK  tick interrupt handler; writes the NVIC to pend a context switch
+vPortSetupTimerInterrupt         high       high       high     OK  programs SysTick registers; wrong values break all timing
+xPortPendSVHandler               high       high       medium   OK  context switch in assembly with barriers and BASEPRI masking
+vPortEnterCritical               high       high       high     OK  critical section used by ~70 functions
+prvTaskExitError                 high       high       high     OK  deliberate trap loop; comments explain tasks must never return
+vListInsert                      high       medium     high     MISS ordered scheduler lists; comment lists crash causes; only called with 
+prvGetExpectedIdleTime           low        low        high     OK  static calculation with a single caller
+uxTaskGetNumberOfTasks           low        high       high     MISS returns a counter; comment says no critical section is needed
+pcTaskGetName                    medium     medium     low      OK  trivial getter, but part of the public API
+
+7/9 match the human label
