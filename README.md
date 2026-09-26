@@ -79,6 +79,12 @@ python -m bullseye analyze ../repos/FreeRTOS-Kernel --platform freertos-cm4f --l
 
 Windows PowerShell: `$env:BULLSEYE_LLM_URL="https://api.deepseek.com"` and so on.
 
+Environment variables only live in the shell that set them. To keep the keys
+across terminals, copy `.env.example` to `.env` in the project root and fill it
+in; `bullseye/llm.py` reads it on every run. A real environment variable of the
+same name overrides the file, and `.env` is gitignored. With no `.env` and no
+variables set, the tool runs fully offline and the viewer says so.
+
 `--llm-top N` limits cost: half of N goes to the riskiest, least-understood functions (to explain them), the other half to lower-rated functions with odd code (where "looks deliberate" can still raise the risk). Answers are cached in `.bullseye_llm_cache.json`, so re-runs are free. Without these variables the tool runs fully offline and the viewer says so. Model names change: check the provider's docs if a request fails with "model not found".
 
 ## Evaluation
@@ -113,6 +119,7 @@ Rules added after the first evaluation, both general rather than tuned to a case
 ```
 bullseye/            package: extract, graph, evidence, llm, score, pipeline, viewer, cli
 bullseye/platforms/  platform configs
+.env.example         template for the LLM keys (copy to .env)
 data/                analysed output for both codebases
 eval/                hand labels and results
 bullseye.html        prebuilt viewer with both codebases

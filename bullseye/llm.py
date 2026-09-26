@@ -11,6 +11,9 @@ Environment:
   BULLSEYE_LLM2_URL / BULLSEYE_LLM2_KEY / BULLSEYE_LLM2_MODEL   (optional second opinion)
   BULLSEYE_LLM_EXTRA / BULLSEYE_LLM2_EXTRA  optional JSON merged into the request body,
       e.g. '{"thinking": {"type": "disabled"}}' to switch off slow reasoning modes
+
+Any of these may instead be written as KEY=VALUE lines in a `.env` file at the
+project root. Real environment variables take precedence.
 """
 import concurrent.futures
 import hashlib
@@ -37,6 +40,28 @@ Reply with JSON only:
   "open_questions": ["max 3 questions an engineer should answer before changing it"]}}"""
 
 
+ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
+
+def _load_dotenv(path=ENV_FILE):
+    """KEY=VALUE lines from .env; a real environment variable always wins."""
+    try:
+        text = path.read_text()
+    except OSError:                        # no .env, or unreadable: nothing to do
+        return
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("export "):     # so the README's export lines can be pasted in
+            line = line[7:].lstrip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        v = v.strip()
+        if len(v) > 1 and v[0] in "'\"" and v[-1] == v[0]:
+            v = v[1:-1]                    # strip one layer of matching quotes
+        os.environ.setdefault(k.strip(), v)
+
+
 def _cfg(prefix):
     url, key, model = (os.environ.get(f"{prefix}_{k}") for k in ("URL", "KEY", "MODEL"))
     if not (url and model):
@@ -49,6 +74,7 @@ def _cfg(prefix):
 
 
 def configured():
+    _load_dotenv()
     return [c for c in (_cfg("BULLSEYE_LLM"), _cfg("BULLSEYE_LLM2")) if c]
 
 
@@ -119,7 +145,8 @@ def check():
     """Send one tiny request to each configured model and report what came back."""
     models = configured()
     if not models:
-        print("No model configured. Set BULLSEYE_LLM_URL, BULLSEYE_LLM_KEY and BULLSEYE_LLM_MODEL.")
+        print("No model configured. Set BULLSEYE_LLM_URL, BULLSEYE_LLM_KEY and BULLSEYE_LLM_MODEL")
+        print(f"as environment variables, or as KEY=VALUE lines in {ENV_FILE}")
         return 1
     code = 0
     for i, cfg in enumerate(models, 1):
