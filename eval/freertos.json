@@ -1,0 +1,12 @@
+{"note": "Human labels written from reading the code, before comparing with the tool. The tool was not tuned to these.",
+ "cases": [
+  {"id": "xPortSysTickHandler", "expected_risk": "high", "why": "tick interrupt handler; writes the NVIC to pend a context switch"},
+  {"id": "vPortSetupTimerInterrupt", "expected_risk": "high", "why": "programs SysTick registers; wrong values break all timing"},
+  {"id": "xPortPendSVHandler", "expected_risk": "high", "why": "context switch in assembly with barriers and BASEPRI masking"},
+  {"id": "vPortEnterCritical", "expected_risk": "high", "why": "critical section used by ~70 functions"},
+  {"id": "prvTaskExitError", "expected_risk": "high", "why": "deliberate trap loop; comments explain tasks must never return"},
+  {"id": "vListInsert", "expected_risk": "high", "why": "ordered scheduler lists; comment lists crash causes; only called with interrupts masked"},
+  {"id": "prvGetExpectedIdleTime", "expected_risk": "low", "why": "static calculation with a single caller"},
+  {"id": "uxTaskGetNumberOfTasks", "expected_risk": "low", "why": "returns a counter; comment says no critical section is needed"},
+  {"id": "pcTaskGetName", "expected_risk": "medium", "why": "trivial getter, but part of the public API"}
+ ]}

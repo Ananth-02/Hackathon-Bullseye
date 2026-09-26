@@ -1,0 +1,9 @@
+function                         expected   got        conf     note
+CFE_PSP_PortWrite8               high       high       low      OK  writes a byte to a raw hardware port address
+CFE_PSP_MemWrite32               high       high       low      OK  writes to an arbitrary physical memory address
+CFE_PSP_ExceptionHook            high       high       medium   OK  installed with excHookAdd; runs when the processor faults
+CFE_PSP_WatchdogService          high       high       low      OK  kicks the hardware watchdog; breaking it resets the flight computer
+OS_ObjectIndexFromToken          high       high       low      OK  core object-table lookup used by almost every OSAL call
+CFE_PSP_GetProcessorName         low        medium     low      MISS returns a name string
+
+5/6 match the human label

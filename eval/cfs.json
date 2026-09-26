@@ -1,0 +1,9 @@
+{"note": "Human labels written from reading the code, before comparing with the tool. The tool was not tuned to these.",
+ "cases": [
+  {"id": "CFE_PSP_PortWrite8", "expected_risk": "high", "why": "writes a byte to a raw hardware port address"},
+  {"id": "CFE_PSP_MemWrite32", "expected_risk": "high", "why": "writes to an arbitrary physical memory address"},
+  {"id": "CFE_PSP_ExceptionHook", "expected_risk": "high", "why": "installed with excHookAdd; runs when the processor faults"},
+  {"id": "CFE_PSP_WatchdogService", "expected_risk": "high", "why": "kicks the hardware watchdog; breaking it resets the flight computer"},
+  {"id": "OS_ObjectIndexFromToken", "expected_risk": "high", "why": "core object-table lookup used by almost every OSAL call"},
+  {"id": "CFE_PSP_GetProcessorName", "expected_risk": "low", "why": "returns a name string"}
+ ]}

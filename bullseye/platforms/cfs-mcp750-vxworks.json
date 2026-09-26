@@ -1,0 +1,94 @@
+{
+  "name": "NASA cFS: OSAL + PSP for the MCP750 PowerPC board on VxWorks",
+  "description": "Root is a folder holding the nasa/osal and nasa/PSP repos. Only the VxWorks / MCP750 implementation is analysed so names resolve to one platform.",
+  "include": [
+    "osal/src/os/shared/src/*.c",
+    "osal/src/os/shared/inc/*.h",
+    "osal/src/os/vxworks/src/*.c",
+    "osal/src/os/vxworks/inc/*.h",
+    "osal/src/os/inc/*.h",
+    "osal/src/os/portable/os-impl-bsd-select.c",
+    "osal/src/os/portable/os-impl-bsd-sockets.c",
+    "osal/src/os/portable/os-impl-posix-dirs.c",
+    "osal/src/os/portable/os-impl-posix-files.c",
+    "osal/src/os/portable/os-impl-posix-io.c",
+    "PSP/fsw/inc/*.h",
+    "PSP/fsw/shared/src/*.c",
+    "PSP/fsw/shared/inc/*.h",
+    "PSP/fsw/mcp750-vxworks/src/*.c",
+    "PSP/fsw/mcp750-vxworks/src/bsp-integration/*.c",
+    "PSP/fsw/mcp750-vxworks/inc/*.h",
+    "PSP/fsw/modules/port_direct/*.c",
+    "PSP/fsw/modules/eeprom_direct/*.c",
+    "PSP/fsw/modules/ram_direct/*.c",
+    "PSP/fsw/modules/timebase_vxworks/*.c",
+    "PSP/fsw/modules/vxworks_sysmon/*.c",
+    "PSP/fsw/modules/iodriver/src/*.c"
+  ],
+  "exclude": [],
+  "public_headers": [
+    "osal/src/os/inc/*.h",
+    "PSP/fsw/inc/*.h"
+  ],
+  "hw_address_ranges": [],
+  "register_field_regex": "",
+  "barrier_asm_regex": "\\b(sync|isync|eieio|msync)\\b",
+  "irq_mask_asm_regex": "\\b(mtmsr|wrteei|wrtee)\\b",
+  "isr_name_regex": "(_ISR|_Isr|IntHandler|_IntHandler)$",
+  "isr_register_calls": [
+    "intConnect",
+    "sysAuxClkConnect",
+    "sysClkConnect",
+    "excHookAdd",
+    "pciIntConnect"
+  ],
+  "critical_markers": [
+    "intLock",
+    "intUnlock",
+    "intCpuLock",
+    "taskLock",
+    "intDisable",
+    "OS_TaskLock_Impl"
+  ],
+  "delay_functions": [
+    "sysUsDelay",
+    "sysMsDelay",
+    "sysDelay"
+  ],
+  "thresholds": {
+    "high": 15,
+    "medium": 5
+  },
+  "hard_triggers": [
+    "isr_context",
+    "writes_hw_register",
+    "critical_section",
+    "busy_wait",
+    "locked_context",
+    "watchdog"
+  ],
+  "function_macros": [],
+  "floor_triggers": [
+    "external_interface"
+  ],
+  "_note_triggers": "external_interface was a hard trigger in the first design; on FreeRTOS that marked 225 of 308 functions HIGH (every kernel API). It now sets a floor of MEDIUM. Move it back to hard_triggers to restore the original rule.",
+  "mmio_write_regex": "^\\s*\\*\\s*\\(\\s*\\(\\s*(?:volatile\\s+)?(?:u?int(?:8|16|32|64)|cpuaddr|char)\\w*\\s*\\*\\s*\\)\\s*\\w*(?:Addr|Address|Ptr|Reg)\\w*\\s*\\)",
+  "_note_delays": "Only CPU-spinning hardware delays count. taskDelay / OS_TaskDelay put the task to sleep and are not busy-waits.",
+  "lock_enter": [
+    "intLock",
+    "intCpuLock",
+    "taskLock",
+    "OS_Lock_Global",
+    "OS_Lock_Global_Impl",
+    "OS_TaskLock_Impl"
+  ],
+  "lock_exit": [
+    "intUnlock",
+    "intCpuUnlock",
+    "taskUnlock",
+    "OS_Unlock_Global",
+    "OS_Unlock_Global_Impl",
+    "OS_TaskUnlock_Impl"
+  ],
+  "watchdog_ident_regex": "watchdog|^wdt|_wdt|wdog"
+}
